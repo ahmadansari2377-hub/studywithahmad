@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cricket Shop – Design Options</title>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Playfair+Display:wght@600;700&family=Poppins:wght@300;400;500;600;700;800&family=Cormorant+Garamond:wght@500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: "Poppins", sans-serif; background: #e9ece9; color: #111; }
+    .intro { text-align: center; padding: 50px 16px 20px; }
+    .intro h1 { font-size: clamp(28px, 4vw, 42px); }
+    .intro p { color: #555; margin-top: 8px; }
+    .option { max-width: 1200px; margin: 40px auto; padding: 0 16px; }
+    .option-label { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+    .option-label .num { background: #111; color: #fff; font-weight: 700; width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; }
+    .option-label h2 { font-size: 22px; }
+    .option-label span { color: #666; font-size: 14px; }
+    .frame { border-radius: 18px; overflow: hidden; box-shadow: 0 25px 60px rgba(0,0,0,.18); }
+    .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+    .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .nav { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 32px; }
+    .nav ul { display: flex; gap: 26px; list-style: none; font-size: 14px; }
+    .icons { display: flex; gap: 14px; font-size: 18px; }
+    .prod-img { display: grid; place-items: center; font-size: 56px; height: 150px; }
+
+    /* ============ 1. STADIUM NIGHT ============ */
+    .d1 { background: #07130d; color: #eef5f0; }
+    .d1 .nav { border-bottom: 1px solid rgba(255,255,255,.08); }
+    .d1 .logo { font-family: "Bebas Neue"; font-size: 30px; letter-spacing: 2px; }
+    .d1 .logo b, .d1 .acc { color: #c6ff3d; }
+    .d1 .nav ul { color: #9bb3a5; }
+    .d1 .hero { display: grid; grid-template-columns: 1.2fr 1fr; align-items: center; padding: 50px 32px; gap: 30px;
+      background: radial-gradient(circle at 80% 40%, rgba(46,232,143,.25), transparent 50%); }
+    .d1 h3.big { font-family: "Bebas Neue"; font-size: clamp(48px, 7vw, 92px); line-height: .95; }
+    .d1 .hero p { color: #9bb3a5; margin: 16px 0 26px; max-width: 420px; }
+    .d1 .btn { background: #c6ff3d; color: #07130d; padding: 12px 28px; border-radius: 50px; font-weight: 600; display: inline-block; }
+    .d1 .hero-art { height: 280px; border-radius: 28px; background: linear-gradient(160deg, #11281c, #0d1f16); border: 1px solid rgba(255,255,255,.08);
+      display: grid; place-items: center; font-size: 130px; position: relative; }
+    .d1 .hero-art::after { content: "-30%"; position: absolute; top: 18px; right: 18px; background: #c6ff3d; color: #07130d; font-weight: 700; padding: 6px 14px; border-radius: 50px; font-size: 14px; }
+    .d1 .brands { display: flex; gap: 12px; padding: 0 32px 30px; flex-wrap: wrap; }
+    .d1 .brands span { border: 1px solid rgba(255,255,255,.12); padding: 8px 20px; border-radius: 50px; font-size: 13px; }
+    .d1 .brands span.on { background: #c6ff3d; color: #07130d; border-color: #c6ff3d; font-weight: 600; }
+    .d1 .sec { padding: 10px 32px 40px; }
+    .d1 .sec h4 { font-family: "Bebas Neue"; font-size: 34px; margin-bottom: 16px; }
+    .d1 .card { background: #11281c; border: 1px solid rgba(255,255,255,.08); border-radius: 18px; padding: 14px; }
+    .d1 .card .prod-img { background: #0d1f16; border-radius: 12px; }
+    .d1 .card small { color: #c6ff3d; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
+    .d1 .card p { font-weight: 500; margin: 2px 0 8px; font-size: 14px; }
+    .d1 .card .row { display: flex; justify-content: space-between; align-items: center; }
+    .d1 .card .add { background: #c6ff3d; color: #07130d; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; }
+
+    /* ============ 2. CLASSIC WILLOW ============ */
+    .d2 { background: #f6f1e7; color: #1d3326; }
+    .d2 .topbar { background: #1d3326; color: #e9dcc0; text-align: center; font-size: 12px; padding: 8px; letter-spacing: 2px; }
+    .d2 .nav { border-bottom: 1px solid #ddd2bc; }
+    .d2 .logo { font-family: "Playfair Display"; font-size: 28px; font-style: italic; }
+    .d2 .logo b { color: #a8792f; }
+    .d2 .hero { display: grid; grid-template-columns: 1fr 1fr; min-height: 340px; }
+    .d2 .hero-text { padding: 50px 40px; display: flex; flex-direction: column; justify-content: center; }
+    .d2 .eyebrow { color: #a8792f; letter-spacing: 4px; font-size: 12px; text-transform: uppercase; }
+    .d2 h3.big { font-family: "Playfair Display"; font-size: clamp(36px, 5vw, 60px); line-height: 1.1; margin: 12px 0; }
+    .d2 .hero p { color: #5d6b61; margin-bottom: 24px; }
+    .d2 .btn { border: 1.5px solid #1d3326; padding: 12px 30px; display: inline-block; letter-spacing: 2px; font-size: 13px; text-transform: uppercase; width: max-content; }
+    .d2 .btn.fill { background: #1d3326; color: #f6f1e7; }
+    .d2 .hero-art { background: linear-gradient(135deg, #1d3326, #2f5a41); display: grid; place-items: center; font-size: 150px; }
+    .d2 .sec { padding: 46px 40px; }
+    .d2 .sec-title { text-align: center; margin-bottom: 30px; }
+    .d2 .sec-title h4 { font-family: "Playfair Display"; font-size: 34px; }
+    .d2 .sec-title p { color: #a8792f; letter-spacing: 3px; font-size: 12px; text-transform: uppercase; }
+    .d2 .brand-tile { background: #fff; border: 1px solid #e5dccb; padding: 26px 16px; text-align: center; transition: .3s; }
+    .d2 .brand-tile:hover { background: #1d3326; color: #f6f1e7; }
+    .d2 .brand-tile b { font-family: "Playfair Display"; font-size: 22px; display: block; }
+    .d2 .brand-tile small { color: #a8792f; font-size: 12px; }
+    .d2 .card { text-align: center; }
+    .d2 .card .prod-img { background: #ece3d1; height: 190px; font-size: 70px; }
+    .d2 .card p { font-family: "Playfair Display"; margin-top: 12px; font-size: 17px; }
+    .d2 .card span { color: #a8792f; font-weight: 600; }
+
+    /* ============ 3. FRESH SPORT ============ */
+    .d3 { background: #fff; color: #0f172a; }
+    .d3 .logo { font-weight: 800; font-size: 24px; letter-spacing: -1px; }
+    .d3 .logo b { background: linear-gradient(90deg, #0066ff, #00d4aa); -webkit-background-clip: text; background-clip: text; color: transparent; }
+    .d3 .nav ul { color: #64748b; font-weight: 500; }
+    .d3 .search { background: #f1f5f9; border-radius: 50px; padding: 9px 18px; color: #94a3b8; font-size: 13px; min-width: 180px; }
+    .d3 .hero { margin: 0 24px; border-radius: 28px; padding: 50px 40px; display: grid; grid-template-columns: 1.2fr 1fr; align-items: center;
+      background: linear-gradient(120deg, #0066ff, #00d4aa); color: #fff; position: relative; overflow: hidden; }
+    .d3 .hero::before { content: ""; position: absolute; width: 300px; height: 300px; border-radius: 50%; background: rgba(255,255,255,.12); right: -60px; top: -80px; }
+    .d3 .tag { background: rgba(255,255,255,.2); padding: 6px 14px; border-radius: 50px; font-size: 12px; font-weight: 600; width: max-content; }
+    .d3 h3.big { font-size: clamp(34px, 5vw, 58px); font-weight: 800; line-height: 1.05; margin: 14px 0; letter-spacing: -1.5px; }
+    .d3 .btn { background: #fff; color: #0066ff; padding: 13px 28px; border-radius: 14px; font-weight: 700; display: inline-block; margin-top: 10px; }
+    .d3 .hero-art { font-size: 150px; text-align: center; position: relative; transform: rotate(-12deg); }
+    .d3 .sec { padding: 40px 24px; }
+    .d3 .sec-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
+    .d3 .sec-head h4 { font-size: 24px; font-weight: 700; }
+    .d3 .sec-head a { color: #0066ff; font-size: 14px; font-weight: 600; }
+    .d3 .brand-pill { border-radius: 20px; padding: 20px; color: #fff; font-weight: 700; font-size: 18px; min-height: 110px; display: flex; flex-direction: column; justify-content: space-between; }
+    .d3 .brand-pill small { font-weight: 400; opacity: .85; font-size: 12px; }
+    .d3 .card { background: #f8fafc; border-radius: 22px; padding: 12px; }
+    .d3 .card .prod-img { background: #fff; border-radius: 16px; }
+    .d3 .card .meta { padding: 10px 6px 4px; }
+    .d3 .card small { color: #64748b; font-size: 12px; }
+    .d3 .card p { font-weight: 600; font-size: 14px; }
+    .d3 .card .row { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; }
+    .d3 .card .price { font-weight: 800; color: #0066ff; }
+    .d3 .card .stars { color: #f59e0b; font-size: 12px; }
+
+    /* ============ 4. BLACK & GOLD SHOWROOM ============ */
+    .d4 { background: #0b0b0b; color: #f3efe6; }
+    .d4 .nav { padding: 22px 36px; }
+    .d4 .logo { font-family: "Cormorant Garamond"; font-size: 30px; letter-spacing: 6px; text-transform: uppercase; }
+    .d4 .logo b { color: #d4af37; }
+    .d4 .nav ul { color: #8d877a; letter-spacing: 2px; font-size: 12px; text-transform: uppercase; }
+    .d4 .hero { text-align: center; padding: 60px 30px 70px; position: relative;
+      background: radial-gradient(ellipse at center, rgba(212,175,55,.18), transparent 60%); }
+    .d4 .eyebrow { color: #d4af37; letter-spacing: 6px; font-size: 12px; text-transform: uppercase; }
+    .d4 h3.big { font-family: "Cormorant Garamond"; font-size: clamp(44px, 7vw, 86px); font-weight: 600; line-height: 1; margin: 16px 0; }
+    .d4 h3.big i { color: #d4af37; }
+    .d4 .hero p { color: #8d877a; max-width: 480px; margin: 0 auto 28px; }
+    .d4 .btn { border: 1px solid #d4af37; color: #d4af37; padding: 13px 34px; letter-spacing: 3px; font-size: 12px; text-transform: uppercase; display: inline-block; }
+    .d4 .showroom { display: grid; grid-template-columns: 1.4fr 1fr 1fr; grid-auto-rows: 170px; gap: 14px; padding: 0 36px 40px; }
+    .d4 .tile { position: relative; overflow: hidden; border: 1px solid #262218; display: flex; flex-direction: column; justify-content: flex-end; padding: 20px;
+      background: linear-gradient(160deg, #1a1813, #0b0b0b); }
+    .d4 .tile:first-child { grid-row: span 2; }
+    .d4 .tile .emoji { position: absolute; top: 14px; right: 18px; font-size: 54px; opacity: .9; }
+    .d4 .tile:first-child .emoji { font-size: 110px; top: 30px; right: 30px; }
+    .d4 .tile b { font-family: "Cormorant Garamond"; font-size: 28px; letter-spacing: 2px; }
+    .d4 .tile small { color: #d4af37; letter-spacing: 2px; font-size: 11px; text-transform: uppercase; }
+    .d4 .sec { padding: 10px 36px 44px; }
+    .d4 .sec h4 { font-family: "Cormorant Garamond"; font-size: 34px; text-align: center; margin-bottom: 22px; }
+    .d4 .card { border: 1px solid #262218; padding: 14px; text-align: center; }
+    .d4 .card .prod-img { background: #15130f; }
+    .d4 .card small { color: #d4af37; letter-spacing: 2px; font-size: 10px; text-transform: uppercase; display: block; margin-top: 12px; }
+    .d4 .card p { font-family: "Cormorant Garamond"; font-size: 20px; }
+    .d4 .card span { color: #8d877a; font-size: 14px; }
+
+    @media (max-width: 800px) {
+      .nav ul, .d3 .search { display: none; }
+      .nav { padding: 16px; }
+      .d1 .hero, .d2 .hero, .d3 .hero { grid-template-columns: 1fr; }
+      .d1 .hero-art, .d3 .hero-art { display: none; }
+      .d2 .hero-art { height: 180px; font-size: 100px; }
+      .grid4 { grid-template-columns: repeat(2, 1fr); }
+      .grid3 { grid-template-columns: 1fr; }
+      .d1 .hero, .d1 .sec, .d1 .brands, .d2 .hero-text, .d2 .sec, .d4 .sec, .d4 .showroom { padding-left: 16px; padding-right: 16px; }
+      .d3 .hero { margin: 0 12px; padding: 36px 22px; }
+      .d4 .showroom { grid-template-columns: 1fr 1fr; }
+      .d4 .tile:first-child { grid-column: span 2; grid-row: auto; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="intro">
+    <h1>🏏 Pick Your Cricket Shop Design</h1>
+    <p>4 styles — each one has brand sections (SG, SS, Kookaburra, Gray-Nicolls, MRF, CA…). Tell me the number you like.</p>
+  </div>
+
+  <!-- ================= 1 ================= -->
+  <section class="option">
+    <div class="option-label"><div class="num">1</div><h2>Stadium Night</h2><span>Dark, bold, neon lime · sporty & energetic</span></div>
+    <div class="frame d1">
+      <div class="nav">
+        <div class="logo">CRIC<b>KART</b></div>
+        <ul><li>Bats</li><li>Balls</li><li>Pads</li><li>Helmets</li><li>Brands</li></ul>
+        <div class="icons">🔍 ♡ 🛒</div>
+      </div>
+      <div class="hero">
+        <div>
+          <h3 class="big">Gear Up Like<br /><span class="acc">A Champion.</span></h3>
+          <p>English willow bats, match balls and pro kits from the brands the world's best players use.</p>
+          <span class="btn">Shop Now →</span>
+        </div>
+        <div class="hero-art">🏏</div>
+      </div>
+      <div class="brands">
+        <span class="on">All</span><span>SG</span><span>SS</span><span>Kookaburra</span><span>Gray-Nicolls</span><span>MRF</span><span>CA Sports</span>
+      </div>
+      <div class="sec">
+        <h4>Kookaburra Section</h4>
+        <div class="grid4">
+          <div class="card"><div class="prod-img">🏏</div><small>Kookaburra</small><p>Ghost Pro Bat</p><div class="row"><b>Rs 42,000</b><span class="add">+</span></div></div>
+          <div class="card"><div class="prod-img">🔴</div><small>Kookaburra</small><p>Turf Match Ball</p><div class="row"><b>Rs 6,500</b><span class="add">+</span></div></div>
+          <div class="card"><div class="prod-img">🧤</div><small>Kookaburra</small><p>Pro Gloves</p><div class="row"><b>Rs 9,800</b><span class="add">+</span></div></div>
+          <div class="card"><div class="prod-img">⛑️</div><small>Kookaburra</small><p>Elite Helmet</p><div class="row"><b>Rs 15,200</b><span class="add">+</span></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 2 ================= -->
+  <section class="option">
+    <div class="option-label"><div class="num">2</div><h2>Classic Willow</h2><span>Cream, deep green & gold · premium heritage (Lord's feel)</span></div>
+    <div class="frame d2">
+      <div class="topbar">FREE DELIVERY ON ORDERS OVER RS 10,000</div>
+      <div class="nav">
+        <div class="logo">The <b>Willow</b> House</div>
+        <ul><li>Bats</li><li>Balls</li><li>Protection</li><li>Clothing</li><li>Brands</li></ul>
+        <div class="icons">🔍 ♡ 🛒</div>
+      </div>
+      <div class="hero">
+        <div class="hero-text">
+          <span class="eyebrow">Since 1882 · Grade 1 English Willow</span>
+          <h3 class="big">Crafted for the<br />Gentleman's Game</h3>
+          <p>Hand-picked bats and timeless kit from cricket's most trusted makers.</p>
+          <div style="display:flex;gap:12px;flex-wrap:wrap"><span class="btn fill">Shop Bats</span><span class="btn">Explore Brands</span></div>
+        </div>
+        <div class="hero-art">🏏</div>
+      </div>
+      <div class="sec">
+        <div class="sec-title"><p>Shop by maker</p><h4>Our Brands</h4></div>
+        <div class="grid4">
+          <div class="brand-tile"><b>Gray-Nicolls</b><small>48 products →</small></div>
+          <div class="brand-tile"><b>SG</b><small>62 products →</small></div>
+          <div class="brand-tile"><b>Kookaburra</b><small>55 products →</small></div>
+          <div class="brand-tile"><b>SS</b><small>40 products →</small></div>
+        </div>
+      </div>
+      <div class="sec" style="padding-top:0">
+        <div class="sec-title"><p>Gray-Nicolls collection</p><h4>Bestsellers</h4></div>
+        <div class="grid3">
+          <div class="card"><div class="prod-img">🏏</div><p>Legend Players Bat</p><span>Rs 55,000</span></div>
+          <div class="card"><div class="prod-img">🦵</div><p>Classic Batting Pads</p><span>Rs 12,400</span></div>
+          <div class="card"><div class="prod-img">👕</div><p>Heritage Whites</p><span>Rs 7,900</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 3 ================= -->
+  <section class="option">
+    <div class="option-label"><div class="num">3</div><h2>Fresh Sport</h2><span>White, blue-teal gradients, rounded · clean like Nike/Adidas apps</span></div>
+    <div class="frame d3">
+      <div class="nav">
+        <div class="logo">cric<b>store</b></div>
+        <div class="search">🔍 Search bats, balls, brands…</div>
+        <ul><li>Shop</li><li>Brands</li><li>Deals</li></ul>
+        <div class="icons">♡ 🛒</div>
+      </div>
+      <div class="hero">
+        <div>
+          <span class="tag">⚡ New Season 2026</span>
+          <h3 class="big">Play Harder.<br />Hit Bigger.</h3>
+          <p>Up to 40% off top brand bats this week.</p>
+          <span class="btn">Shop the Sale</span>
+        </div>
+        <div class="hero-art">🏏</div>
+      </div>
+      <div class="sec">
+        <div class="sec-head"><h4>Shop by Brand</h4><a>See all →</a></div>
+        <div class="grid4">
+          <div class="brand-pill" style="background:linear-gradient(135deg,#ef4444,#f97316)">MRF<small>Genius & Chase Master</small></div>
+          <div class="brand-pill" style="background:linear-gradient(135deg,#0066ff,#6366f1)">SG<small>Test & Players Edition</small></div>
+          <div class="brand-pill" style="background:linear-gradient(135deg,#10b981,#06b6d4)">SS<small>Ton & Master Range</small></div>
+          <div class="brand-pill" style="background:linear-gradient(135deg,#a855f7,#ec4899)">CA Sports<small>Plus & Gold Series</small></div>
+        </div>
+      </div>
+      <div class="sec" style="padding-top:0">
+        <div class="sec-head"><h4>MRF Section</h4><a>View 36 items →</a></div>
+        <div class="grid4">
+          <div class="card"><div class="prod-img">🏏</div><div class="meta"><small>MRF</small><p>Genius Grand Edition</p><div class="row"><span class="price">Rs 48,500</span><span class="stars">★★★★★</span></div></div></div>
+          <div class="card"><div class="prod-img">🎒</div><div class="meta"><small>MRF</small><p>Kit Bag Wheelie</p><div class="row"><span class="price">Rs 11,000</span><span class="stars">★★★★☆</span></div></div></div>
+          <div class="card"><div class="prod-img">🧤</div><div class="meta"><small>MRF</small><p>Batting Gloves</p><div class="row"><span class="price">Rs 6,200</span><span class="stars">★★★★★</span></div></div></div>
+          <div class="card"><div class="prod-img">👟</div><div class="meta"><small>MRF</small><p>Spike Shoes</p><div class="row"><span class="price">Rs 13,900</span><span class="stars">★★★★☆</span></div></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 4 ================= -->
+  <section class="option">
+    <div class="option-label"><div class="num">4</div><h2>Black & Gold Showroom</h2><span>Luxury black with gold · each brand gets a big showroom tile</span></div>
+    <div class="frame d4">
+      <div class="nav">
+        <div class="logo"><b>◆</b> Crease</div>
+        <ul><li>Brands</li><li>Bats</li><li>Kits</li><li>Limited</li></ul>
+        <div class="icons">🔍 🛒</div>
+      </div>
+      <div class="hero">
+        <span class="eyebrow">The Brand Showroom</span>
+        <h3 class="big">Every Legend Has<br />Its <i>Maker.</i></h3>
+        <p>Step inside the official stores of cricket's greatest brands — all under one roof.</p>
+        <span class="btn">Enter Showroom</span>
+      </div>
+      <div class="showroom">
+        <div class="tile"><span class="emoji">🏏</span><small>Official Store</small><b>KOOKABURRA</b></div>
+        <div class="tile"><span class="emoji">🔴</span><small>Official Store</small><b>SG</b></div>
+        <div class="tile"><span class="emoji">🧤</span><small>Official Store</small><b>SS</b></div>
+        <div class="tile"><span class="emoji">⛑️</span><small>Official Store</small><b>GRAY-NICOLLS</b></div>
+        <div class="tile"><span class="emoji">🎒</span><small>Official Store</small><b>MRF</b></div>
+      </div>
+      <div class="sec">
+        <h4>Limited Editions</h4>
+        <div class="grid3">
+          <div class="card"><div class="prod-img">🏏</div><small>SG · Limited</small><p>Sunny Tonny Gold</p><span>Rs 68,000</span></div>
+          <div class="card"><div class="prod-img">🏏</div><small>Kookaburra · Signed</small><p>Kahuna Pro 1.0</p><span>Rs 72,500</span></div>
+          <div class="card"><div class="prod-img">🏏</div><small>SS · Master</small><p>Ton Reserve Edition</p><span>Rs 64,000</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="intro" style="padding-bottom:60px"><p>Reply with <b>1, 2, 3 or 4</b> (or mix, e.g. “3 but dark”) and I'll build the full shop.</p></div>
+</body>
+</html>

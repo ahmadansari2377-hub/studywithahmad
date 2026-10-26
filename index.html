@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CricZone – Live Cricket Scores, News & Stats</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- Live ticker -->
+  <div class="ticker">
+    <span class="ticker-label"><span class="dot"></span> LIVE</span>
+    <div class="ticker-track">
+      <div class="ticker-content" id="tickerContent"></div>
+    </div>
+  </div>
+
+  <!-- Navbar -->
+  <header class="navbar" id="navbar">
+    <a href="#home" class="logo">CRIC<span>ZONE</span></a>
+    <nav class="nav-links" id="navLinks">
+      <a href="#home" class="active">Home</a>
+      <a href="#matches">Matches</a>
+      <a href="#table">Points Table</a>
+      <a href="#players">Players</a>
+      <a href="#news">News</a>
+    </nav>
+    <a href="#matches" class="btn btn-small">Live Scores</a>
+    <button class="menu-toggle" id="menuToggle" aria-label="Open menu">
+      <span></span><span></span><span></span>
+    </button>
+  </header>
+
+  <!-- Hero -->
+  <section class="hero" id="home">
+    <div class="hero-text">
+      <p class="eyebrow">World Cricket Championship 2026</p>
+      <h1>Feel Every <span>Boundary.</span><br />Live Every Ball.</h1>
+      <p class="hero-sub">Ball-by-ball live scores, match schedules, player stats and the latest cricket news — all in one place.</p>
+      <div class="hero-buttons">
+        <a href="#matches" class="btn">Watch Live</a>
+        <a href="#news" class="btn btn-outline">Latest News</a>
+      </div>
+      <div class="hero-stats">
+        <div><h3 data-count="48">0</h3><p>Matches</p></div>
+        <div><h3 data-count="10">0</h3><p>Teams</p></div>
+        <div><h3 data-count="150">0</h3><p>Players</p></div>
+      </div>
+    </div>
+
+    <!-- Featured live match card -->
+    <div class="live-card">
+      <div class="live-card-head">
+        <span class="badge-live"><span class="dot"></span> LIVE</span>
+        <span>Final · T20 · Lahore</span>
+      </div>
+      <div class="live-team">
+        <div class="flag" style="--c1:#01411c;--c2:#ffffff">PAK</div>
+        <div class="team-name">Pakistan</div>
+        <div class="team-score"><span id="pakScore">186/4</span><small id="pakOvers">(18.2)</small></div>
+      </div>
+      <div class="live-team">
+        <div class="flag" style="--c1:#1f3c88;--c2:#ff9933">IND</div>
+        <div class="team-name">India</div>
+        <div class="team-score">192/7<small>(20.0)</small></div>
+      </div>
+      <p class="live-status" id="liveStatus">Pakistan need 7 runs in 10 balls</p>
+      <div class="balls" id="balls"></div>
+      <div class="crr">
+        <div><small>CRR</small><b id="crr">10.15</b></div>
+        <div><small>RRR</small><b id="rrr">4.20</b></div>
+        <div><small>Win %</small><b id="win">PAK 72%</b></div>
+      </div>
+      <div class="ball-anim"></div>
+    </div>
+  </section>
+
+  <!-- Matches -->
+  <section class="section" id="matches">
+    <div class="section-head">
+      <h2>Matches</h2>
+      <div class="tabs" id="matchTabs">
+        <button class="tab active" data-filter="live">Live</button>
+        <button class="tab" data-filter="upcoming">Upcoming</button>
+        <button class="tab" data-filter="result">Results</button>
+      </div>
+    </div>
+    <div class="match-grid" id="matchGrid"></div>
+  </section>
+
+  <!-- Points table -->
+  <section class="section" id="table">
+    <div class="section-head"><h2>Points Table</h2></div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>#</th><th>Team</th><th>P</th><th>W</th><th>L</th><th>NRR</th><th>Pts</th></tr>
+        </thead>
+        <tbody id="pointsBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Players -->
+  <section class="section" id="players">
+    <div class="section-head"><h2>Top Players</h2></div>
+    <div class="player-grid" id="playerGrid"></div>
+  </section>
+
+  <!-- News -->
+  <section class="section" id="news">
+    <div class="section-head"><h2>Latest News</h2></div>
+    <div class="news-grid" id="newsGrid"></div>
+  </section>
+
+  <!-- Newsletter -->
+  <section class="newsletter">
+    <h2>Never Miss a Ball</h2>
+    <p>Get live match alerts and top stories straight to your inbox.</p>
+    <form id="newsletterForm">
+      <input type="email" placeholder="Enter your email" required />
+      <button class="btn" type="submit">Subscribe</button>
+    </form>
+    <p class="form-msg" id="formMsg"></p>
+  </section>
+
+  <footer class="footer">
+    <a href="#home" class="logo">CRIC<span>ZONE</span></a>
+    <p>© 2026 CricZone. Made for cricket lovers.</p>
+    <div class="socials">
+      <a href="#" aria-label="Facebook">f</a>
+      <a href="#" aria-label="X">𝕏</a>
+      <a href="#" aria-label="Instagram">◎</a>
+      <a href="#" aria-label="YouTube">▶</a>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>

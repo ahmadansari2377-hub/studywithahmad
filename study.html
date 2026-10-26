@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StudyNest — Study Planner</title>
+  <script>
+    // Theme first so the page never flashes the wrong colours
+    try { const t = localStorage.getItem("studynest-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+    if (!matchMedia("(prefers-reduced-motion: reduce)").matches) document.documentElement.classList.add("anim");
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lenis@1.1.13/dist/lenis.css" />
+  <link rel="stylesheet" href="study.css" />
+</head>
+<body>
+
+  <svg width="0" height="0" style="position:absolute">
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 5 5 9-10"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l12-7.5z"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
+    <symbol id="i-reset" viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.5-5.8"/><path d="M4 4v5h5"/></symbol>
+    <symbol id="i-skip" viewBox="0 0 24 24"><path d="m6 5 9 7-9 7zM18 5v14"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z"/></symbol>
+    <symbol id="i-left" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol>
+    <symbol id="i-right" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+    <symbol id="i-flame" viewBox="0 0 24 24"><path d="M12 21c4 0 7-2.7 7-6.6 0-3.5-2.4-5.6-4-8.4-.6 2-1.6 3-3 3.6C12 6.5 11 4.4 8.8 3 9 6.6 5 9.2 5 14.4 5 18.3 8 21 12 21Z"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/></symbol>
+  </svg>
+
+  <!-- Intro loader -->
+  <div class="loader" id="loader">
+    <div class="loader-book"><i></i><i></i><i></i></div>
+    <div class="loader-logo"><span>Study</span><em>Nest</em></div>
+    <div class="loader-bar"><i id="loaderBar"></i></div>
+  </div>
+
+  <div class="progress" id="progress"></div>
+  <canvas class="confetti" id="confetti"></canvas>
+
+  <header class="header" id="header">
+    <div class="container header-inner">
+      <a href="#top" class="logo"><span class="logo-mark"></span>Study<em>Nest</em></a>
+      <nav class="nav" id="nav">
+        <a href="#syllabus">Syllabus</a>
+        <a href="#focus">Focus</a>
+        <a href="#tasks">Tasks</a>
+        <a href="#timetable">Timetable</a>
+        <a href="#exams">Exams</a>
+        <a href="#flashcards">Flashcards</a>
+        <a href="#progress-sec">Progress</a>
+      </nav>
+      <div class="header-actions">
+        <button class="class-btn" id="classBtn" aria-label="Change class and group"><span id="classBtnText">Choose class</span></button>
+        <button class="icon-btn" id="themeBtn" aria-label="Toggle dark mode"><svg class="sun"><use href="#i-sun"/></svg><svg class="moon"><use href="#i-moon"/></svg></button>
+        <button class="icon-btn menu-btn" id="menuBtn" aria-label="Menu"><svg><use href="#i-menu"/></svg></button>
+      </div>
+    </div>
+  </header>
+
+  <main id="top">
+    <!-- Dashboard -->
+    <section class="hero">
+      <div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div>
+      <div class="container hero-inner">
+        <div class="hero-text">
+          <p class="chip" id="todayChip"></p>
+          <h1 class="split-now" id="greeting">Good day, let's get studying.</h1>
+          <p class="quote" id="quote"></p>
+          <div class="hero-cta">
+            <a href="#syllabus" class="btn btn-primary magnetic"><span class="roll"><span>Open my syllabus</span></span></a>
+            <a href="#focus" class="btn btn-soft magnetic"><span class="roll"><span>Start a focus session</span></span></a>
+          </div>
+        </div>
+        <div class="stat-grid" id="statGrid">
+          <div class="stat-card c1"><svg><use href="#i-clock"/></svg><b id="statFocus">0</b><span>minutes focused today</span></div>
+          <div class="stat-card c2"><svg><use href="#i-check"/></svg><b id="statTasks">0</b><span>tasks done today</span></div>
+          <div class="stat-card c3"><svg><use href="#i-flame"/></svg><b id="statStreak">0</b><span>day study streak</span></div>
+          <div class="stat-card c4"><svg><use href="#i-target"/></svg><b id="statExam">–</b><span id="statExamLabel">days to next exam</span></div>
+        </div>
+      </div>
+      <div class="ticker"><div class="ticker-track" id="ticker"></div></div>
+    </section>
+
+    <!-- Syllabus (PTB chapters) -->
+    <section class="section" id="syllabus">
+      <div class="container">
+        <div class="section-head">
+          <div><p class="kicker">01 · Syllabus</p><h2 class="split">Your PTB books, <em>chapter by chapter.</em></h2></div>
+          <div class="syl-overall reveal">
+            <svg class="mini-ring" viewBox="0 0 120 120"><circle class="mr-bg" cx="60" cy="60" r="52" /><circle class="mr-fg" id="overallRing" cx="60" cy="60" r="52" /></svg>
+            <div><b id="overallPct">0%</b><span id="overallText">of your syllabus read</span></div>
+          </div>
+        </div>
+        <div class="syl-subjects reveal" id="sylSubjects"></div>
+        <div class="syl-grid">
+          <div class="syl-main">
+            <div class="syl-head">
+              <div>
+                <h3 id="sylTitle">Physics</h3>
+                <p class="muted small" id="sylMeta"></p>
+              </div>
+              <div class="syl-legend"><span><i class="lg-read"></i>Read</span><span><i class="lg-rev"></i>Revised</span></div>
+            </div>
+            <ol class="chapters" id="chapters"></ol>
+          </div>
+          <aside class="syl-side">
+            <div class="panel reveal">
+              <h3>How to use this</h3>
+              <ul class="howto">
+                <li><b>Tick “Read”</b> when you finish a chapter from your textbook.</li>
+                <li><b>Tick “Revised”</b> after you revise it for the exam.</li>
+                <li><b>Press “Plan”</b> to add the chapter to your task list.</li>
+              </ul>
+            </div>
+            <div class="panel reveal">
+              <h3>Compulsory subjects</h3>
+              <p class="muted small">Plan these with the task list and timer — they're in the subject menus everywhere.</p>
+              <div class="comp-list" id="compList"></div>
+            </div>
+            <a class="panel ebook reveal" href="https://pctb.punjab.gov.pk/" target="_blank" rel="noopener">
+              <span>Official source</span>
+              <b>Read the PTB books free →</b>
+              <small>Punjab Curriculum &amp; Textbook Board website. Chapter names here follow the 2026–27 editions — always check against your own textbook.</small>
+            </a>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <!-- Focus timer -->
+    <section class="section tint" id="focus">
+      <div class="container">
+        <div class="section-head">
+          <div><p class="kicker">02 · Focus</p><h2 class="split">Deep work, <em>25 minutes</em> at a time.</h2></div>
+          <p class="head-note reveal">Pick a subject, press start, and put your phone away. Every finished session counts towards your progress.</p>
+        </div>
+        <div class="focus-grid">
+          <div class="timer-card reveal" id="timerCard">
+            <div class="mode-tabs" id="modeTabs">
+              <span class="mode-pill" id="modePill"></span>
+              <button data-mode="focus" class="active">Focus</button>
+              <button data-mode="short">Short break</button>
+              <button data-mode="long">Long break</button>
+            </div>
+            <div class="ring-wrap">
+              <svg class="ring" viewBox="0 0 220 220">
+                <circle class="ring-bg" cx="110" cy="110" r="96" />
+                <circle class="ring-fg" id="ringFg" cx="110" cy="110" r="96" />
+              </svg>
+              <div class="ring-center">
+                <div class="time" id="timeText">25:00</div>
+                <div class="time-label" id="timeLabel">Ready to focus</div>
+              </div>
+              <div class="orbit" id="orbit"><i></i></div>
+            </div>
+            <div class="timer-controls">
+              <button class="round-btn" id="resetBtn" aria-label="Reset"><svg><use href="#i-reset"/></svg></button>
+              <button class="play-btn magnetic" id="playBtn" aria-label="Start"><svg class="play"><use href="#i-play"/></svg><svg class="pause"><use href="#i-pause"/></svg></button>
+              <button class="round-btn" id="skipBtn" aria-label="Skip"><svg><use href="#i-skip"/></svg></button>
+            </div>
+            <div class="session-dots" id="sessionDots"></div>
+          </div>
+          <div class="focus-side">
+            <div class="panel reveal">
+              <label class="field-label" for="focusSubject">Studying</label>
+              <select id="focusSubject" class="input"></select>
+              <div class="durations">
+                <label>Focus <input type="number" min="1" max="120" id="durFocus" class="input small" /> min</label>
+                <label>Short <input type="number" min="1" max="60" id="durShort" class="input small" /> min</label>
+                <label>Long <input type="number" min="1" max="60" id="durLong" class="input small" /> min</label>
+              </div>
+            </div>
+            <div class="panel reveal">
+              <div class="panel-head"><h3>Today's sessions</h3><span class="muted" id="sessionCount">0 sessions</span></div>
+              <ul class="session-log" id="sessionLog"></ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tasks -->
+    <section class="section" id="tasks">
+      <div class="container">
+        <div class="section-head">
+          <div><p class="kicker">03 · Tasks</p><h2 class="split">Small steps, <em>ticked off.</em></h2></div>
+          <div class="task-progress reveal"><div class="tp-bar"><i id="tpFill"></i></div><span id="tpText">0 of 0 done</span></div>
+        </div>
+        <form class="add-task reveal" id="taskForm" autocomplete="off">
+          <input class="input grow" id="taskText" placeholder="What do you need to do? e.g. Revise chapter 4 notes" required />
+          <select class="input" id="taskSubject" aria-label="Subject"></select>
+          <input class="input" type="date" id="taskDue" aria-label="Due date" />
+          <select class="input" id="taskPriority" aria-label="Priority">
+            <option value="2">High</option><option value="1" selected>Medium</option><option value="0">Low</option>
+          </select>
+          <button class="btn btn-primary" type="submit"><svg><use href="#i-plus"/></svg>Add</button>
+        </form>
+        <div class="filter-tabs reveal" id="taskFilters">
+          <button data-filter="all" class="active">All</button>
+          <button data-filter="today">Due today</button>
+          <button data-filter="open">To do</button>
+          <button data-filter="done">Done</button>
+        </div>
+        <ul class="task-list" id="taskList"></ul>
+      </div>
+    </section>
+
+    <!-- Timetable -->
+    <section class="section tint" id="timetable">
+      <div class="container">
+        <div class="section-head">
+          <div><p class="kicker">04 · Timetable</p><h2 class="split">Your week, <em>at a glance.</em></h2></div>
+          <p class="head-note reveal">Classes, tuition and self-study blocks. The block happening right now glows.</p>
+        </div>
+        <div class="day-tabs reveal" id="dayTabs"><span class="day-pill" id="dayPill"></span></div>
+        <div class="tt-grid">
+          <ul class="blocks" id="blocks"></ul>
+          <form class="panel add-block reveal" id="blockForm" autocomplete="off">
+            <h3>Add a block</h3>
+            <input class="input" id="blockTitle" placeholder="e.g. Physics tuition" required />
+            <select class="input" id="blockSubject" aria-label="Subject"></select>
+            <select class="input" id="blockDay" aria-label="Day"></select>
+            <div class="row2">
+              <label>From <input class="input" type="time" id="blockStart" value="16:00" required /></label>
+              <label>To <input class="input" type="time" id="blockEnd" value="17:00" required /></label>
+            </div>
+            <button class="btn btn-primary" type="submit"><svg><use href="#i-plus"/></svg>Add to timetable</button>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- Exams -->
+    <section class="section dark" id="exams">
+      <div class="container">
+        <div class="section-head">
+          <div><p class="kicker">05 · Exams</p><h2 class="split">Count down, <em>stay calm.</em></h2></div>
+          <form class="add-exam reveal" id="examForm" autocomplete="off">
+            <input class="input" id="examTitle" placeholder="Exam name" required />
+            <select class="input" id="examSubject" aria-label="Subject"></select>
+            <input class="input" type="datetime-local" id="examDate" required aria-label="Exam date and time" />
+            <button class="btn btn-primary" type="submit"><svg><use href="#i-plus"/></svg>Add</button>
+          </form>
+        </div>
+        <div class="exam-grid" id="examGrid"></div>
+      </div>
+    </section>
+
+    <!-- Flashcards -->
+    <section class="section" id="flashcards">
+      <div class="container">
+        <div class="section-head">
+          <div><p class="kicker">06 · Flashcards</p><h2 class="split">Test yourself, <em>flip by flip.</em></h2></div>
+          <p class="head-note reveal">Starter revision cards for your class are included — add your own from your notes. Click the card (or press Space) to flip it.</p>
+        </div>
+        <div class="fc-grid">
+          <div class="fc-main">
+            <div class="deck-tabs reveal" id="deckTabs"></div>
+            <div class="fc-stage">
+              <div class="flashcard reveal" id="flashcard" tabindex="0" aria-live="polite">
+                <div class="fc-face fc-front"><span class="fc-tag" id="fcTagFront"></span><p id="fcFront"></p><small>Tap to reveal answer</small></div>
+                <div class="fc-face fc-back"><span class="fc-tag" id="fcTagBack"></span><p id="fcBack"></p><small>Did you know it?</small></div>
+              </div>
+            </div>
+            <div class="fc-controls">
+              <button class="round-btn" id="fcPrev" aria-label="Previous card"><svg><use href="#i-left"/></svg></button>
+              <button class="btn btn-soft" id="fcAgain">Again</button>
+              <span class="fc-count" id="fcCount">0 / 0</span>
+              <button class="btn btn-primary" id="fcGot"><svg><use href="#i-check"/></svg>Got it</button>
+              <button class="round-btn" id="fcNext" aria-label="Next card"><svg><use href="#i-right"/></svg></button>
+            </div>
+          </div>
+          <form class="panel add-card reveal" id="cardForm" autocomplete="off">
+            <h3>New flashcard</h3>
+            <select class="input" id="cardSubject" aria-label="Subject"></select>
+            <textarea class="input" id="cardFront" rows="2" placeholder="Question" required></textarea>
+            <textarea class="input" id="cardBack" rows="3" placeholder="Answer" required></textarea>
+            <button class="btn btn-primary" type="submit"><svg><use href="#i-plus"/></svg>Add card</button>
+            <p class="muted small" id="deckInfo"></p>
+          </form>
+        </div>
+      </div>
+    </section>
+
+    <!-- Progress -->
+    <section class="section tint" id="progress-sec">
+      <div class="container">
+        <div class="section-head">
+          <div><p class="kicker">07 · Progress</p><h2 class="split">Watch the <em>hours add up.</em></h2></div>
+          <div class="totals reveal">
+            <div><b id="totHours">0</b><span>hours this week</span></div>
+            <div><b id="totSessions">0</b><span>sessions this week</span></div>
+          </div>
+        </div>
+        <div class="prog-grid">
+          <div class="panel chart-panel reveal">
+            <div class="panel-head"><h3>Focus minutes · last 7 days</h3></div>
+            <div class="bar-chart" id="barChart"></div>
+          </div>
+          <div class="panel reveal">
+            <div class="panel-head"><h3>By subject · this week</h3></div>
+            <ul class="subject-bars" id="subjectBars"></ul>
+          </div>
+          <div class="panel heat-panel reveal">
+            <div class="panel-head"><h3>Study calendar · last 15 weeks</h3><span class="heat-legend">Less <i class="l0"></i><i class="l1"></i><i class="l2"></i><i class="l3"></i><i class="l4"></i> More</span></div>
+            <div class="heatmap" id="heatmap"></div>
+          </div>
+          <div class="panel reveal">
+            <div class="panel-head"><h3>Extra subjects</h3><span class="muted small">Your class subjects are added automatically</span></div>
+            <ul class="subject-list" id="subjectList"></ul>
+            <form class="add-subject" id="subjectForm" autocomplete="off">
+              <input class="input grow" id="subjectName" placeholder="e.g. Tuition test prep" required />
+              <input type="color" id="subjectColor" value="#6d5dfc" aria-label="Subject colour" />
+              <button class="icon-btn solid" type="submit" aria-label="Add subject"><svg><use href="#i-plus"/></svg></button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-giant" id="footerGiant" aria-hidden="true">Keep going.</div>
+    <div class="container footer-bottom">
+      <a href="#top" class="logo"><span class="logo-mark"></span>Study<em>Nest</em></a>
+      <span class="muted small">Your data is saved in this browser only.</span>
+      <div class="footer-actions">
+        <button class="link-btn" id="sampleBtn">Load sample data</button>
+        <button class="link-btn danger" id="clearBtn">Clear everything</button>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Class & group picker -->
+  <div class="setup" id="setup" aria-hidden="true">
+    <div class="setup-bg" id="setupBg"></div>
+    <div class="setup-card" role="dialog" aria-labelledby="setupTitle">
+      <p class="kicker">Welcome to StudyNest</p>
+      <h2 id="setupTitle">Which class are you in?</h2>
+      <div class="setup-step">
+        <span class="step-label">Class</span>
+        <div class="choice-row" id="classChoices">
+          <button data-cls="9"><b>9th</b><small>Matric · Part 1</small></button>
+          <button data-cls="10"><b>10th</b><small>Matric · Part 2</small></button>
+          <button data-cls="11"><b>11th</b><small>Inter · 1st year</small></button>
+          <button data-cls="12"><b>12th</b><small>Inter · 2nd year</small></button>
+        </div>
+      </div>
+      <div class="setup-step">
+        <span class="step-label">Group</span>
+        <div class="choice-row" id="groupChoices"></div>
+      </div>
+      <button class="btn btn-primary btn-wide" id="setupDone" disabled>Build my planner</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lenis@1.1.13/dist/lenis.min.js"></script>
+  <script src="syllabus.js"></script>
+  <script src="study.js"></script>
+</body>
+</html>
