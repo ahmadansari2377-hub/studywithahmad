@@ -1111,9 +1111,11 @@ if (!A) {
   if (lenis) lenis.stop();
   const bar = { v: 0 };
   gsap.timeline({ defaults: { ease: "expo.out" } })
-    .from(".loader-logo > *", { yPercent: 120, opacity: 0, stagger: 0.1, duration: 1 })
+    .from(".loader-mark", { scale: 0, rotate: -140, duration: 1.1, ease: "back.out(1.8)" })
+    .from(".loader-mark .lm-star", { scale: 0, rotate: 180, transformOrigin: "50% 50%", duration: 0.8, ease: "back.out(3)" }, 0.5)
+    .from(".loader-logo > *", { yPercent: 120, opacity: 0, stagger: 0.1, duration: 1 }, 0.2)
     .to(bar, { v: 1, duration: 1.3, ease: "power2.inOut", onUpdate: () => ($("#loaderBar").style.transform = `scaleX(${bar.v})`) }, 0.1)
-    .to(".loader-logo > *, .loader-book, .loader-bar", { yPercent: -120, opacity: 0, stagger: 0.05, duration: 0.6, ease: "power3.in" })
+    .to(".loader-logo > *, .loader-mark, .loader-bar", { yPercent: -120, opacity: 0, stagger: 0.05, duration: 0.6, ease: "power3.in" })
     .fromTo("#loader", { clipPath: "circle(150% at 50% 50%)" }, { clipPath: "circle(0% at 50% 50%)", duration: 1.1, ease: "expo.inOut" }, "-=0.2")
     .set("#loader", { display: "none" })
     .from(".header-inner > *, .nav a", { y: -30, opacity: 0, stagger: 0.04, duration: 0.9 }, "-=0.6")
