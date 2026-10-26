@@ -1,6 +1,6 @@
 // =====================================================================
 //  PTB / PCTB syllabus data — chapter titles of the 2026-27 Punjab
-//  textbooks (Science & Computer subjects). `start` is the chapter number
+//  textbooks (science, computer and compulsory subjects). `start` is the chapter number
 //  the book begins at (Class 10 and 12 books continue Class 9 and 11).
 //  Always double-check against the printed textbook.
 // =====================================================================
@@ -11,9 +11,10 @@ const SUBJECT_INFO = {
   maths: { name: "Mathematics", color: "#e6a11f" },
   computer: { name: "Computer Science", color: "#2f8cf0" },
   english: { name: "English", color: "#e05297" },
-  urdu: { name: "Urdu", color: "#8a5cf6" },
-  islamiat: { name: "Islamiat / Pak Studies", color: "#0f9d8a" },
-  tarjama: { name: "Tarjama-tul-Quran", color: "#b7791f" },
+  urdu: { name: "Urdu", color: "#8a5cf6", rtl: true },
+  islamiat: { name: "Islamiat", color: "#0f9d8a", rtl: true },
+  pakstudies: { name: "Pakistan Studies", color: "#2e9e4f" },
+  tarjama: { name: "Tarjama-tul-Quran", color: "#b7791f", rtl: true },
 };
 
 const GROUPS = {
@@ -27,7 +28,13 @@ const GROUPS = {
     { id: "ics", name: "ICS (Physics)", subjects: ["maths", "computer", "physics"] },
   ],
 };
-const COMPULSORY = ["english", "urdu", "islamiat", "tarjama"];
+// Compulsory subjects for every group: Islamiat in 9th & 11th, Pakistan Studies in 10th & 12th
+const COMPULSORY = {
+  9: ["english", "urdu", "islamiat", "tarjama"],
+  10: ["english", "urdu", "pakstudies", "tarjama"],
+  11: ["english", "urdu", "islamiat", "tarjama"],
+  12: ["english", "urdu", "pakstudies", "tarjama"],
+};
 
 const SYLLABUS = {
   9: {
@@ -59,6 +66,32 @@ const SYLLABUS = {
     computer: { start: 1, chapters: ["Computing Networks", "Computational Thinking and Algorithms", "Object Oriented Programming Using Python", "Development of Graphical User Interface (GUI)", "Code Testing and Debugging", "Data and Analysis", "Hypothesis Testing", "Applications of Computer Science", "Cybersecurity and Safe Digital Collaboration"] },
   },
 };
+
+// ---------- Compulsory subjects (2026-27 PTB editions) ----------
+Object.assign(SYLLABUS[9], {
+  english: { start: 1, chapters: ["The Saviour of Mankind", "Patriotism", "Daffodils (Poem)", "Hazrat Asma (R.A)", "Women Empowerment through Entrepreneurship", "The Value of Time", "If (Poem)", "The Impact of Globalisation on Culture and Economy", "Quality Education: A Key to Success", "The Silent Predator and the Majestic Prey — Snow Leopard and Markhor", "The Dear Departed (One-Act Play)"] },
+  urdu: { start: 1, chapters: ["حمد", "نعت", "اخلاقِ حسنہ", "اپنی مدد آپ", "کلیم اور مرزا ظاہر دار بیگ", "نام دیو مالی", "آرام و سکون", "کتبہ", "ابتدائی حساب", "لڑی میں پروئے ہوئے منظر", "بھیڑیا", "محنت کی برکات", "جاوید کے نام", "پیامِ لطیف", "کرکٹ اور مشاعرہ", "فقیرانہ آئے صدا کر چلے", "سن تو سہی جہاں میں ہے تیرا فسانہ کیا", "غم ہے یا خوشی ہے تو", "کاش طوفاں میں سفینے کو اتارا ہوتا"] },
+  islamiat: { start: 1, chapters: ["قرآن مجید و حدیثِ نبوی ﷺ", "ایمانیات و عبادات", "سیرتِ نبوی ﷺ", "اخلاق و آداب", "حسنِ معاملات و معاشرت", "ہدایت کے سرچشمے اور مشاہیرِ اسلام", "اسلامی تعلیمات اور عصرِ حاضر کے تقاضے"] },
+  tarjama: { start: 1, chapters: ["سورۃ مریم", "سورۃ طٰہٰ", "سورۃ الانبیاء", "سورۃ الحج", "سورۃ الفرقان", "سورۃ الشعراء", "سورۃ النمل", "سورۃ القصص", "سورۃ العنکبوت", "سورۃ الروم", "سورۃ لقمان", "سورۃ السجدہ", "سورۃ سبا", "سورۃ فاطر", "سورۃ یٰسٓ", "سورۃ الصّٰفّٰت", "سورۃ صٓ", "سورۃ الاحقاف"] },
+});
+Object.assign(SYLLABUS[10], {
+  english: { start: 1, chapters: ["Hazrat Muhammad (SAW) — Social Reforms for the Rights of Women, Orphans and Slaves", "My Beloved Pakistan (Poem)", "Digital Globalisation: Transforming the English Language", "The Earth: Act Now for Tomorrow", "The Happy Prince", "Drug Abuse", "Time (Poem)", "Pollution-Free Pakistan with Greenery All Around", "The Road Not Taken (Poem)", "The Three Questions", "Vocabulary: Context Clues, Idioms and Proverbs", "Vocabulary: Word Families and Inferred Meanings", "Phrases, Connotation and Denotation, Figurative Language", "Figures of Speech", "Compound Prepositions", "Conjunctions and Transitional Devices", "Capitalization, Punctuation and Spelling", "Punctuation, Capitalization and Tenses", "Sentence Patterns, Complex Sentences and Paragraphs", "Direct and Indirect Narration"] },
+  urdu: { start: 1, chapters: ["حمد", "نعت", "اخلاقِ نبوی ﷺ", "سرسید کا بچپن", "محسن محلہ", "کفارہ", "سویرے جو کل آنکھ میری کھلی", "دوستی کا پھل", "میرا گاؤں", "بابل کے کھنڈر", "اولڈ ایج ہوم", "کچھ ذریعۂ تعلیم کے بارے میں", "آدمی نامہ", "نمودِ صبح", "خطاب بہ جوانانِ اسلام", "وغیرہ", "بازیچۂ اطفال ہے دنیا مرے آگے", "اثر اس کو ذرا نہیں ہوتا", "ہے مشقِ سخن جاری چکی کی مشقت بھی", "یوں کہنے کو پیرایۂ اظہار بہت ہیں"] },
+  pakstudies: { start: 1, chapters: ["Ideological Basis of Pakistan", "Pakistan Movement", "History of Pakistan (1947 to Now) and Constitutional Development", "Geography of Pakistan", "Pakistan and International Affairs", "Resources and Economic Development of Pakistan", "Population, Society and Cultural Diversity in Pakistan", "Women Empowerment in Pakistan"] },
+  tarjama: { start: 1, chapters: ["سورۃ الانعام", "سورۃ الاعراف", "سورۃ یونس", "سورۃ ہود", "سورۃ الرعد", "سورۃ ابراہیم", "سورۃ الحجر", "سورۃ النحل", "سورۃ بنی اسرائیل", "سورۃ الکہف", "سورۃ المؤمنون", "سورۃ الزمر", "سورۃ المؤمن (غافر)", "سورۃ حٰمٓ السجدہ", "سورۃ الشوریٰ"] },
+});
+Object.assign(SYLLABUS[11], {
+  english: { start: 1, chapters: ["Khatam-un-Nabiyeen Hazrat Muhammad (SAW)", "Responsibility of the Youth in Nation-Building", "A Bird Came Down the Walk (Poem)", "Team Moon", "Impact of Global Warming on Pakistan", "The Echoing Green (Poem)", "What You Do is What You Are", "Clean Water", "Freedom (Poem)", "The Punishment of Shahpesh, the Persian, on Khipil, the Builder", "Those Winter Sundays (Poem)", "The Impact of AI on Society, Human Relationships, and Ethics", "Ruba'iyat (Poem)", "The End of the Beginning"] },
+  urdu: { start: 1, chapters: ["حمد", "نعت", "اخلاقِ نبوی ﷺ", "فاقہ میں روزہ", "مکاتیبِ غالب", "ایک استاد عدالت کے کٹہرے میں", "چارپائی", "اور پاکستان بن گیا", "نیا قانون", "دہلیز", "تاریخ کا کفن", "پاکستانی زبانیں اور ان کا باہمی رشتہ", "نظم: اے وادیٔ لولاب", "نظم: او دیس سے آنے والے بتا", "نظم: آزادی", "نظم: اخلاص", "نظم: کھڑا ڈنر", "غزل: پتا پتا بوٹا بوٹا حال ہمارا جانے ہے", "غزل: سر میں سودا بھی نہیں، دل میں تمنا بھی نہیں", "غزل: بے چین بہت پھرنا، گھبرائے ہوئے رہنا", "غزل: سلسلے توڑ گیا وہ سبھی جاتے جاتے", "غزل: بادباں کھلنے سے پہلے کا اشارہ دیکھنا"] },
+  islamiat: { start: 1, chapters: ["علوم القرآن", "علوم الحدیث", "توحید کے دلائل اور تقاضے", "رسالتِ محمدی ﷺ کی خصوصیات", "ملائکہ پر ایمان", "کتبِ سماویہ پر ایمان", "آخرت پر ایمان", "فلسفۂ نماز", "فلسفۂ زکوٰۃ و صدقات", "فلسفۂ صوم", "فلسفۂ حج و قربانی", "نبی کریم ﷺ بطور مثالی سربراہِ خاندان", "نبی کریم ﷺ بطور مثالی سربراہِ ریاست", "نبی کریم ﷺ بطور مثالی سپہ سالار", "نبی کریم ﷺ کی معاشی تعلیمات", "اجتماعی خیر خواہی اور احترامِ انسانیت", "اخلاقی رذائل سے اجتناب", "معاشرتی تعلقات کے اخلاق و آداب", "حقوق العباد (اساتذہ، معاون عملہ، زوجین، اولاد، بیوہ)", "وراثت کی اسلامی تعلیمات", "نکاح و طلاق کی اسلامی تعلیمات", "خلافتِ راشدہ", "ائمہ اہلِ بیت", "صوفیائے کرام", "قانون کی پاسداری", "نظامِ اسلام کی نشاۃِ ثانیہ اور مسلمانوں کی ذمہ داریاں", "اسلاموفوبیا اور ہماری ذمہ داریاں"] },
+  tarjama: { start: 1, chapters: ["سورۃ البقرہ", "سورۃ آلِ عمران", "سورۃ الانفال", "سورۃ التوبہ"] },
+});
+Object.assign(SYLLABUS[12], {
+  english: { start: 1, chapters: ["Journey to Taif", "The Last Lesson", "On His Blindness (Poem)", "The Power of Digital Learning", "The Giving Tree", "The Fun They Had", "Because I Could Not Stop for Death (Poem)", "The Devoted Friend", "The Doll's House", "All the World's a Stage (Poem)", "A Letter to God", "A Visit to the Swat Valley", "The Pearl (Novel)"] },
+  urdu: { start: 1, chapters: ["حمد", "نعت", "ہجرتِ حبشہ", "ماں جی", "کافی", "رستم و سہراب", "محشر", "مینار", "سیر دوسرے درویش کی", "بہادر خان کی سرگزشت", "حکیم احسن اللہ خان", "نظریۂ پاکستان", "انسانِ کامل کی برکات", "داستان تیاری میں باغ کی", "نثار میں تیری گلیوں کے", "نئی نسل کا نوحہ", "میں روزے سے ہوں", "غزل: خواجہ میر درد", "غزل: مرزا اسد اللہ خان غالب", "غزل: علامہ محمد اقبال", "غزل: ادا جعفری", "غزل: محسن احسان"] },
+  pakstudies: { start: 1, chapters: ["Islam and Pakistan", "Constitutional and Political Development in Pakistan", "Pakistan's Administrative System", "Resources and Economic Development of Pakistan", "Education, Sports and Tourism in Pakistan", "Pakistan and International Affairs"] },
+  tarjama: { start: 1, chapters: ["سورۃ النساء", "سورۃ المائدہ", "سورۃ النور", "سورۃ الاحزاب", "سورۃ محمد", "سورۃ الفتح", "سورۃ الحجرات", "سورۃ الحدید", "سورۃ المجادلہ", "سورۃ الحشر", "سورۃ الممتحنہ", "سورۃ الصف", "سورۃ الجمعہ", "سورۃ المنافقون", "سورۃ التغابن", "سورۃ الطلاق", "سورۃ التحریم"] },
+});
 
 // Starter revision cards (written for Study with Ahmad, not copied from the books)
 const STARTER_CARDS = {

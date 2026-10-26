@@ -125,7 +125,7 @@ function subjects() {
   const core = g ? g.subjects : [];
   return [
     ...core.map((id) => ({ id, ...SUBJECT_INFO[id], core: true })),
-    ...COMPULSORY.map((id) => ({ id, ...SUBJECT_INFO[id] })),
+    ...(state.profile ? COMPULSORY[state.profile.cls] : []).map((id) => ({ id, ...SUBJECT_INFO[id] })),
     ...state.extras.map((x) => ({ ...x, extra: true })),
   ];
 }
@@ -405,13 +405,15 @@ function bookProgress(s) {
   b.chapters.forEach((_, i) => { const p = state.syl[sylKey(s, b.start + i)] || {}; if (p.r) read++; if (p.v) rev++; });
   return { read, rev, total: b.chapters.length };
 }
+// Group subjects first, then the compulsory ones for this class
+const bookSubjects = () => (state.profile ? [...groupOf().subjects, ...COMPULSORY[state.profile.cls]] : []);
 function renderSyllabus(animate) {
   if (!state.profile) return;
-  const core = groupOf().subjects;
-  if (!core.includes(sylSubject)) sylSubject = core[0];
-  $("#sylSubjects").innerHTML = core.map((s) => {
+  const all = bookSubjects(), core = groupOf().subjects;
+  if (!all.includes(sylSubject)) sylSubject = all[0];
+  $("#sylSubjects").innerHTML = all.map((s, i) => {
     const p = bookProgress(s), info = SUBJECT_INFO[s];
-    return `<button class="syl-tab ${s === sylSubject ? "active" : ""}" data-subj="${s}" style="--c:${info.color}">
+    return `<button class="syl-tab ${s === sylSubject ? "active" : ""} ${i === core.length ? "first-comp" : ""}" data-subj="${s}" style="--c:${info.color}">
       <b><span class="dot" style="background:${info.color}"></span>${info.name}</b>
       <small data-prog="${s}">${p.read}/${p.total} chapters read</small>
       <div class="sb-track"><i data-bar="${s}" style="--c:${info.color};transform:scaleX(${p.total ? p.read / p.total : 0})"></i></div>
@@ -419,7 +421,6 @@ function renderSyllabus(animate) {
   }).join("");
   renderChapters(animate);
   renderOverall();
-  $("#compList").innerHTML = COMPULSORY.map((s) => `<span><i class="dot" style="background:${SUBJECT_INFO[s].color}"></i>${SUBJECT_INFO[s].name}</span>`).join("");
 }
 function renderChapters(animate) {
   const b = bookOf(sylSubject), info = SUBJECT_INFO[sylSubject];
@@ -430,7 +431,7 @@ function renderChapters(animate) {
     const n = b.start + i, pr = state.syl[sylKey(sylSubject, n)] || {};
     return `<li class="chapter ${pr.v ? "revised" : ""}" style="--c:${info.color}" data-n="${n}">
       <span class="ch-num">${n}</span>
-      <div><h4>${esc(name)}</h4><p>Chapter ${n} · ${info.name}</p></div>
+      <div><h4 ${info.rtl ? 'class="ur" dir="rtl" lang="ur"' : ""}>${esc(name)}</h4><p>Chapter ${n} · ${info.name}</p></div>
       <div class="ch-actions">
         <button class="toggle read ${pr.r ? "on" : ""}" data-act="r"><svg><use href="#i-check"/></svg>Read</button>
         <button class="toggle rev ${pr.v ? "on" : ""}" data-act="v"><svg><use href="#i-check"/></svg>Revised</button>
@@ -443,9 +444,8 @@ function renderChapters(animate) {
 }
 function renderOverall() {
   if (!state.profile) return;
-  const core = groupOf().subjects;
   let read = 0, total = 0;
-  core.forEach((s) => { const p = bookProgress(s); read += p.read; total += p.total; });
+  bookSubjects().forEach((s) => { const p = bookProgress(s); read += p.read; total += p.total; });
   const pct = total ? Math.round((read / total) * 100) : 0;
   $("#overallPct").textContent = pct + "%";
   $("#overallText").textContent = `of your syllabus read · ${read}/${total} chapters`;
