@@ -23,7 +23,61 @@ function load() {
   return defaults();
 }
 let state = load();
-function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+function saveLocal() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+function save() { saveLocal(); if (token) scheduleSync(); }
+
+// ---------- Cloud database (needs the StudyNest server: `uv run website`) ----------
+const CLOUD = location.protocol.startsWith("http");
+let token = null, username = null, pulling = false, syncTimer;
+try { token = localStorage.getItem("studynest-token"); username = localStorage.getItem("studynest-user"); } catch (e) {}
+if (!CLOUD) token = null;
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    ...opts,
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: "Bearer " + token } : {}) },
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    if (res.status === 401 && token) forgetLogin();
+    throw new Error(body.detail || "The server didn't respond — is it running?");
+  }
+  return body;
+}
+function setSync(status, msg) {
+  const dot = $("#syncDot");
+  dot.className = "sync-dot " + (token ? status : "");
+  $("#accountText").textContent = username || "Sign in";
+  $("#accountBtn").title = token ? msg || { ok: "Saved to the cloud", saving: "Saving…", error: "Couldn't save — will retry" }[status] || "" : "Sign in to save to the cloud";
+  const st = $("#authStatus");
+  if (st) st.textContent = token ? (msg || { ok: "Everything is saved to the cloud database.", saving: "Saving your latest changes…", error: "Couldn't reach the server — your changes are kept on this device and will sync later." }[status]) : "";
+}
+function scheduleSync() {
+  clearTimeout(syncTimer);
+  setSync("saving");
+  syncTimer = setTimeout(pushState, 900);
+}
+async function pushState() {
+  try { await api("/api/state", { method: "PUT", body: JSON.stringify({ data: state }) }); setSync("ok"); }
+  catch (e) { setSync("error"); syncTimer = setTimeout(pushState, 15000); }
+}
+// Cloud copy wins if it exists; otherwise this device's planner is uploaded.
+async function pullState() {
+  const res = await api("/api/state");
+  if (res.data) { state = { ...defaults(), ...res.data }; saveLocal(); }
+  else await pushState();
+  setSync("ok");
+  return !!res.data;
+}
+function rememberLogin(t, u) {
+  token = t; username = u;
+  try { localStorage.setItem("studynest-token", t); localStorage.setItem("studynest-user", u); } catch (e) {}
+}
+function forgetLogin() {
+  token = null; username = null;
+  try { localStorage.removeItem("studynest-token"); localStorage.removeItem("studynest-user"); } catch (e) {}
+  setSync("idle");
+}
 
 // ---------- Motion setup ----------
 const root = document.documentElement;
@@ -139,8 +193,8 @@ function openSetup() {
   if (lenis) lenis.stop();
   if (A) gsap.fromTo($$(".setup-card > *"), { y: 24, opacity: 0 }, { y: 0, opacity: 1, stagger: 0.07, duration: 0.8, delay: 0.15, ease: "expo.out" });
 }
-function closeSetup() {
-  if (!state.profile) return; // a class must be chosen first
+function closeSetup(force) {
+  if (!state.profile && force !== true) return; // a class must be chosen first
   setup.classList.remove("open");
   setup.setAttribute("aria-hidden", "true");
   if (lenis) lenis.start();
@@ -168,6 +222,81 @@ $("#setupDone").onclick = () => {
   closeSetup();
   toast(`Planner ready for Class ${pick.cls} · ${groupOf().name}`);
   confetti(innerWidth / 2, innerHeight / 3, 120);
+};
+
+// =====================================================================
+//  Account: sign in / create account / sign out
+// =====================================================================
+const auth = $("#auth");
+let authTab = "login";
+function openAuth() {
+  const signed = !!token;
+  $("#authForms").hidden = signed || !CLOUD;
+  $("#authSigned").hidden = !signed;
+  $("#authOffline").hidden = CLOUD;
+  if (signed) { $("#authName").textContent = username; setSync($("#syncDot").classList.contains("error") ? "error" : "ok"); }
+  $("#authError").textContent = "";
+  auth.classList.add("open");
+  auth.setAttribute("aria-hidden", "false");
+  if (lenis) lenis.stop();
+  requestAnimationFrame(() => setAuthTab(authTab));
+  if (A) gsap.fromTo($$(".auth-card > div:not([hidden]) > *, .auth-card > p:not([hidden])"), { y: 24, opacity: 0 }, { y: 0, opacity: 1, stagger: 0.06, duration: 0.8, delay: 0.15, ease: "expo.out" });
+  if (!signed && CLOUD) setTimeout(() => $("#authUser").focus(), 300);
+}
+function closeAuth() {
+  auth.classList.remove("open");
+  auth.setAttribute("aria-hidden", "true");
+  if (!state.profile && !pulling) return openSetup();
+  if (lenis && !setup.classList.contains("open")) lenis.start();
+}
+function setAuthTab(t) {
+  authTab = t;
+  const btn = $(`#authTabs button[data-tab="${t}"]`);
+  $$("#authTabs button").forEach((b) => b.classList.toggle("active", b === btn));
+  movePill($("#authTabs"), $("#authPill"), btn);
+  $("#authSubmit").textContent = t === "login" ? "Sign in" : "Create my account";
+  $("#authPass").autocomplete = t === "login" ? "current-password" : "new-password";
+  $("#authError").textContent = "";
+}
+$("#accountBtn").onclick = openAuth;
+$("#authBg").onclick = closeAuth;
+$("#authClose").onclick = closeAuth;
+$("#authTabs").addEventListener("click", (e) => { const b = e.target.closest("button[data-tab]"); if (b) setAuthTab(b.dataset.tab); });
+$("#setupSignIn").onclick = () => { closeSetup(true); authTab = "login"; openAuth(); };
+$("#authForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const submit = $("#authSubmit");
+  submit.disabled = true;
+  $("#authError").textContent = "";
+  try {
+    const res = await api(authTab === "login" ? "/api/login" : "/api/signup", {
+      method: "POST",
+      body: JSON.stringify({ username: $("#authUser").value, password: $("#authPass").value }),
+    });
+    rememberLogin(res.token, res.username);
+    pulling = true;
+    const hadCloud = await pullState();
+    pulling = false;
+    $("#authPass").value = "";
+    renderAll(true);
+    closeAuth();
+    toast(hadCloud ? `Welcome back, ${res.username} — your planner is loaded` : `Signed in as ${res.username} — your planner is now saved to the cloud`);
+    confetti(innerWidth / 2, innerHeight / 3, 100);
+  } catch (err) {
+    pulling = false;
+    $("#authError").textContent = err.message;
+    if (A) gsap.fromTo(".auth-card", { x: -10 }, { x: 0, duration: 0.5, ease: "elastic.out(1,0.3)" });
+  } finally {
+    submit.disabled = false;
+  }
+});
+$("#syncNow").onclick = async () => { clearTimeout(syncTimer); setSync("saving"); await pushState(); toast("Synced with the cloud"); };
+$("#signOut").onclick = async () => {
+  try { await api("/api/logout", { method: "POST" }); } catch (e) {}
+  forgetLogin();
+  state = defaults();
+  saveLocal(); // don't leave this student's planner on a shared computer
+  location.reload();
 };
 
 // Starter content for a class: flashcards always, plus a sample plan on first setup
@@ -837,9 +966,11 @@ $("#sampleBtn").onclick = () => {
   save(); renderAll(); if (A) animateCharts();
   toast("Sample study history added — charts are filled in");
 };
-$("#clearBtn").onclick = () => {
-  if (!confirm("Delete all your StudyNest data in this browser? This can't be undone.")) return;
-  state = defaults(); save();
+$("#clearBtn").onclick = async () => {
+  if (!confirm(token ? "Delete all your StudyNest data, in this browser AND in your cloud account? This can't be undone." : "Delete all your StudyNest data in this browser? This can't be undone.")) return;
+  state = defaults();
+  saveLocal();
+  if (token) { clearTimeout(syncTimer); try { await api("/api/state", { method: "PUT", body: JSON.stringify({ data: state }) }); } catch (e) {} }
   location.reload();
 };
 
@@ -880,7 +1011,10 @@ function onScroll(y) {
 }
 if (lenis) lenis.on("scroll", ({ scroll }) => onScroll(scroll));
 else addEventListener("scroll", () => onScroll(scrollY), { passive: true });
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSetup(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (auth.classList.contains("open")) closeAuth(); else closeSetup();
+});
 addEventListener("resize", () => {
   movePill($("#modeTabs"), $("#modePill"), $("#modeTabs button.active"));
   const d = $("#dayTabs button.active");
@@ -902,9 +1036,24 @@ rotateQuote();
 setInterval(rotateQuote, 8000);
 setMode("focus");
 renderAll(false);
+setSync("idle");
+
+// Signed in on this device? Load the latest planner from the database.
+if (token) {
+  pulling = true;
+  setSync("saving", "Loading your planner…");
+  pullState()
+    .then(() => { renderAll(true); })
+    .catch(() => setSync("error"))
+    .finally(() => {
+      pulling = false;
+      if (!state.profile) openSetup();
+      else if (setup.classList.contains("open")) closeSetup();
+    });
+}
 
 if (!A) {
-  if (!state.profile) openSetup();
+  if (!state.profile && !pulling) openSetup();
 } else {
   // Intro: book pages flip, name rises, curtain lifts, dashboard builds in
   if (lenis) lenis.stop();
@@ -922,7 +1071,7 @@ if (!A) {
     .from("#quote, .hero-cta > *", { y: 30, opacity: 0, stagger: 0.1, duration: 1 }, "<0.3")
     .from(".stat-card", { y: 60, opacity: 0, rotate: (i) => (i % 2 ? 4 : -4), stagger: 0.1, duration: 1.2, onStart: () => renderStats(true) }, "<0.1")
     .from(".ticker", { yPercent: 100, opacity: 0, duration: 1 }, "<0.3")
-    .add(() => { if (lenis) lenis.start(); if (!state.profile) openSetup(); });
+    .add(() => { if (lenis) lenis.start(); if (!state.profile && !pulling) openSetup(); });
 
   // Floating blobs drift forever
   $$(".blob").forEach((b, i) => gsap.to(b, { x: i % 2 ? 60 : -60, y: i ? 40 : -40, duration: 7 + i * 2, repeat: -1, yoyo: true, ease: "sine.inOut" }));

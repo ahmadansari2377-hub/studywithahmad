@@ -60,6 +60,7 @@
       </nav>
       <div class="header-actions">
         <button class="class-btn" id="classBtn" aria-label="Change class and group"><span id="classBtnText">Choose class</span></button>
+        <button class="account-btn" id="accountBtn" aria-label="Account"><span class="sync-dot" id="syncDot"></span><span id="accountText">Sign in</span></button>
         <button class="icon-btn" id="themeBtn" aria-label="Toggle dark mode"><svg class="sun"><use href="#i-sun"/></svg><svg class="moon"><use href="#i-moon"/></svg></button>
         <button class="icon-btn menu-btn" id="menuBtn" aria-label="Menu"><svg><use href="#i-menu"/></svg></button>
       </div>
@@ -360,6 +361,41 @@
         <div class="choice-row" id="groupChoices"></div>
       </div>
       <button class="btn btn-primary btn-wide" id="setupDone" disabled>Build my planner</button>
+      <p class="setup-alt">Already have an account? <button class="link-btn" id="setupSignIn">Sign in</button></p>
+    </div>
+  </div>
+
+  <!-- Account: sign in / create account -->
+  <div class="setup" id="auth" aria-hidden="true">
+    <div class="setup-bg" id="authBg"></div>
+    <div class="setup-card auth-card" role="dialog" aria-labelledby="authTitle">
+      <button class="icon-btn auth-close" id="authClose" aria-label="Close"><svg><use href="#i-plus"/></svg></button>
+      <div id="authForms">
+        <p class="kicker">Save to the cloud</p>
+        <h2 id="authTitle">Keep your planner safe.</h2>
+        <p class="muted auth-note">Your tasks, timetable, syllabus progress and study sessions are stored in the StudyNest database — sign in on any phone or laptop and carry on.</p>
+        <div class="auth-tabs" id="authTabs">
+          <span class="auth-pill" id="authPill"></span>
+          <button data-tab="login" class="active">Sign in</button>
+          <button data-tab="signup">Create account</button>
+        </div>
+        <form id="authForm" autocomplete="on">
+          <input class="input" id="authUser" name="username" placeholder="Username" autocomplete="username" required />
+          <input class="input" id="authPass" name="password" type="password" placeholder="Password (6+ characters)" autocomplete="current-password" required />
+          <p class="auth-error" id="authError"></p>
+          <button class="btn btn-primary btn-wide" type="submit" id="authSubmit">Sign in</button>
+        </form>
+      </div>
+      <div id="authSigned" hidden>
+        <p class="kicker">Your account</p>
+        <h2>Hi, <em id="authName"></em></h2>
+        <p class="muted auth-note" id="authStatus"></p>
+        <div class="auth-actions">
+          <button class="btn btn-soft" id="syncNow">Sync now</button>
+          <button class="btn btn-primary" id="signOut">Sign out</button>
+        </div>
+      </div>
+      <p class="muted small auth-offline" id="authOffline" hidden>Cloud saving needs the StudyNest server. Start it with <b>uv run website</b>, then open <b>http://127.0.0.1:8000</b>.</p>
     </div>
   </div>
 

@@ -360,6 +360,40 @@ textarea.input { height: auto; padding: 12px 14px; resize: vertical; }
 .ebook b { font-family: var(--display); font-size: 22px; }
 .ebook small { opacity: 0.8; font-size: 12.5px; }
 
+/* Account button + cloud sync dot */
+.account-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 50px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: transform 0.3s var(--ease-out), border-color 0.3s;
+}
+.account-btn:hover { transform: translateY(-2px); border-color: var(--primary); }
+.sync-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); transition: background 0.3s; }
+.sync-dot.ok { background: var(--mint); }
+.sync-dot.saving { background: var(--sun); animation: blink 0.8s infinite; }
+.sync-dot.error { background: var(--coral); }
+.auth-card { max-width: 480px; }
+.auth-close { position: absolute; top: 14px; right: 14px; transform: rotate(45deg); }
+.auth-close:hover { transform: rotate(135deg); }
+.auth-note { margin: -12px 0 22px; font-size: 14.5px; }
+.auth-tabs { position: relative; display: flex; padding: 5px; border-radius: 14px; background: var(--tint); margin-bottom: 16px; }
+.auth-tabs button { position: relative; z-index: 1; flex: 1; padding: 10px; border-radius: 10px; font-weight: 600; font-size: 14px; color: var(--muted); transition: color 0.4s; }
+.auth-tabs button.active { color: var(--primary-ink); }
+.auth-pill { position: absolute; top: 5px; bottom: 5px; left: 0; border-radius: 10px; background: var(--primary); transition: transform 0.6s var(--ease-out), width 0.6s var(--ease-out); }
+#authForm { display: flex; flex-direction: column; gap: 10px; }
+.auth-error { min-height: 20px; font-size: 13.5px; color: var(--coral); }
+.auth-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.auth-offline { margin-top: 16px; padding: 12px 14px; border-radius: 12px; background: var(--tint); }
+.setup-alt { margin-top: 14px; text-align: center; font-size: 14px; color: var(--muted); }
+
 /* Setup modal */
 .setup { position: fixed; inset: 0; z-index: 120; display: grid; place-items: center; padding: 16px; visibility: hidden; pointer-events: none; }
 .setup.open { visibility: visible; pointer-events: auto; }
@@ -718,6 +752,8 @@ textarea.input { height: auto; padding: 12px 14px; resize: vertical; }
   .totals b { font-size: 36px; }
   .task-progress { min-width: 0; width: 100%; }
   .class-btn { padding: 0 10px; font-size: 12.5px; }
+  .account-btn { padding: 0 10px; }
+  #accountText { display: none; }
   .chapter { grid-template-columns: 40px 1fr; }
   .ch-num { width: 40px; height: 40px; font-size: 15px; }
   .ch-actions { grid-column: 1 / -1; }
