@@ -36,7 +36,27 @@ You need [uv](https://docs.astral.sh/uv/) installed.
 
 3. Open **http://127.0.0.1:8000**.
 
-The server creates its tables (`users`, `auth_tokens`, `planner_data`) on first start. You can also open `study.html` directly without the server, but then data is only saved in that browser.
+The server creates its tables (`users`, `auth_tokens`, `planner_data`, `login_failures`) on first start. You can also open `study.html` directly without the server, but then data is only saved in that browser.
+
+## Put it online (Render, free)
+
+1. Sign in at [render.com](https://render.com) with your GitHub account.
+2. Click **New → Blueprint**, choose this repository, and click **Apply**. Render reads `render.yaml`.
+3. When it asks for **DATABASE_URL**, paste the same Neon URL that is in your `.env` file.
+4. Wait for the first build (a few minutes). Your site will be at **https://study-with-ahmad.onrender.com**, or a similar link if that name is taken.
+
+After that, every `git push` to `main` updates the live site automatically.
+
+Good to know:
+- The free plan sleeps after about 15 minutes without visitors. The next visit takes up to a minute to wake it up.
+- If the build says Python 3.14 isn't available, add an environment variable `PYTHON_VERSION` with a full version number such as `3.14.0`.
+
+## Security
+
+- Passwords are stored as scrypt hashes, never as plain text.
+- **Login limit:** after 3 wrong passwords, an account is locked for 15 minutes. One internet connection can make at most 10 wrong attempts per 15 minutes.
+- Sign-ins expire after 30 days.
+- The server only serves the four public files. `.env`, `.git` and the source code are never reachable from the web.
 
 ## Project files
 

@@ -12,7 +12,7 @@ import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse
 from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
@@ -21,6 +21,10 @@ from pydantic import BaseModel
 ROOT = Path(__file__).resolve().parents[2]
 MAX_STATE_BYTES = 2_000_000
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_.]{3,30}$")
+TOKEN_DAYS = 30            # stay signed in for 30 days
+MAX_USER_FAILS = 3         # wrong passwords allowed per account...
+MAX_IP_FAILS = 10          # ...and per internet connection
+LOCK_MINUTES = 15          # before trying again
 
 # Only these files are served — never .env, .git or source code.
 PUBLIC_FILES = {
@@ -62,6 +66,14 @@ CREATE TABLE IF NOT EXISTS planner_data (
     data       JSONB NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+CREATE TABLE IF NOT EXISTS login_failures (
+    id           BIGSERIAL PRIMARY KEY,
+    username     TEXT NOT NULL,
+    ip           TEXT NOT NULL,
+    attempted_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS login_failures_user_idx ON login_failures (username, attempted_at);
+CREATE INDEX IF NOT EXISTS login_failures_ip_idx ON login_failures (ip, attempted_at);
 """
 
 pool: ConnectionPool | None = None
@@ -109,8 +121,9 @@ def current_user(authorization: str = Header(default="")) -> dict:
         raise HTTPException(401, "Please sign in")
     with pool.connection() as conn:
         row = conn.execute(
-            "SELECT u.id, u.username FROM auth_tokens t JOIN users u ON u.id = t.user_id WHERE t.token_hash = %s",
-            (token_hash(token),),
+            "SELECT u.id, u.username FROM auth_tokens t JOIN users u ON u.id = t.user_id "
+            "WHERE t.token_hash = %s AND t.created_at > now() - make_interval(days => %s)",
+            (token_hash(token), TOKEN_DAYS),
         ).fetchone()
     if not row:
         raise HTTPException(401, "Your session has expired — please sign in again")
@@ -153,15 +166,47 @@ def signup(body: Credentials):
     return {"token": token, "username": username}
 
 
+def client_ip(request: Request) -> str:
+    # uvicorn fills request.client from X-Forwarded-For when FORWARDED_ALLOW_IPS trusts the proxy
+    return request.client.host if request.client else "unknown"
+
+
+def minutes_word(seconds: float) -> str:
+    m = max(1, round(seconds / 60))
+    return f"{m} minute{'s' if m != 1 else ''}"
+
+
 @app.post("/api/login")
-def login(body: Credentials):
+def login(body: Credentials, request: Request):
+    username, ip = body.username.strip().lower(), client_ip(request)
     with pool.connection() as conn:
+        conn.execute("DELETE FROM login_failures WHERE attempted_at < now() - interval '1 day'")
+        user_fails, user_wait = conn.execute(
+            """SELECT count(*), EXTRACT(EPOCH FROM min(attempted_at) + make_interval(mins => %s) - now())
+               FROM login_failures WHERE username = %s AND attempted_at > now() - make_interval(mins => %s)""",
+            (LOCK_MINUTES, username, LOCK_MINUTES),
+        ).fetchone()
+        ip_fails, ip_wait = conn.execute(
+            """SELECT count(*), EXTRACT(EPOCH FROM min(attempted_at) + make_interval(mins => %s) - now())
+               FROM login_failures WHERE ip = %s AND attempted_at > now() - make_interval(mins => %s)""",
+            (LOCK_MINUTES, ip, LOCK_MINUTES),
+        ).fetchone()
+        if user_fails >= MAX_USER_FAILS or ip_fails >= MAX_IP_FAILS:
+            wait = float(user_wait if user_fails >= MAX_USER_FAILS else ip_wait)
+            raise HTTPException(429, f"Too many wrong attempts. Please try again in {minutes_word(wait)}.")
+
         row = conn.execute(
-            "SELECT id, username, password_hash FROM users WHERE lower(username) = lower(%s)",
-            (body.username.strip(),),
+            "SELECT id, username, password_hash FROM users WHERE lower(username) = %s", (username,)
         ).fetchone()
         if not row or not check_password(body.password, row[2]):
-            raise HTTPException(401, "Wrong username or password")
+            conn.execute("INSERT INTO login_failures (username, ip) VALUES (%s, %s)", (username, ip))
+            conn.commit()  # keep the failure even though we raise below
+            left = MAX_USER_FAILS - (user_fails + 1)
+            if left <= 0:
+                raise HTTPException(429, f"Wrong password 3 times — this account is locked for {LOCK_MINUTES} minutes.")
+            raise HTTPException(401, f"Wrong username or password — {left} {'try' if left == 1 else 'tries'} left.")
+
+        conn.execute("DELETE FROM login_failures WHERE username = %s", (username,))
         token = new_token(conn, row[0])
     return {"token": token, "username": row[1]}
 
