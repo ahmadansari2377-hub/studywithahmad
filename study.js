@@ -1,5 +1,5 @@
 // =====================================================================
-//  StudyNest — study planner for Matric & Intermediate (Punjab Board)
+//  Study with Ahmad — study planner for Matric & Intermediate (Punjab Board)
 //  All data lives in this browser (localStorage).
 // =====================================================================
 const $ = (s, r = document) => r.querySelector(s);
@@ -26,7 +26,7 @@ let state = load();
 function saveLocal() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
 function save() { saveLocal(); if (token) scheduleSync(); }
 
-// ---------- Cloud database (needs the StudyNest server: `uv run website`) ----------
+// ---------- Cloud database (needs the Study with Ahmad server: `uv run website`) ----------
 const CLOUD = location.protocol.startsWith("http");
 let token = null, username = null, pulling = false, syncTimer;
 try { token = localStorage.getItem("studynest-token"); username = localStorage.getItem("studynest-user"); } catch (e) {}
@@ -342,14 +342,14 @@ const QUOTES = [
 ];
 function renderHeader() {
   const p = state.profile;
-  $("#classBtnText").textContent = p ? `Class ${p.cls} · ${groupOf().name}` : "Choose class";
+  $("#classBtnText").innerHTML = p ? `Class ${p.cls}<span class="cb-group"> · ${groupOf().name}</span>` : "Choose class";
   const now = new Date();
   $("#todayChip").textContent = now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" }) + (p ? ` · Class ${p.cls}` : "");
 }
 function greetingText() {
   const h = new Date().getHours();
-  const part = h < 5 ? "Burning the midnight oil?" : h < 12 ? "Good morning," : h < 17 ? "Good afternoon," : "Good evening,";
-  return h < 5 ? `${part} <em>Let's make it count.</em>` : `${part} <em>let's get studying.</em>`;
+  const part = h < 5 ? "Up late?" : h < 12 ? "Good morning," : h < 17 ? "Good afternoon," : "Good evening,";
+  return `${part} <em>let's get</em>`;
 }
 let qi = 0;
 function rotateQuote() {
@@ -442,6 +442,7 @@ function renderChapters(animate) {
   refreshTriggers();
 }
 function renderOverall() {
+  if (!state.profile) return;
   const core = groupOf().subjects;
   let read = 0, total = 0;
   core.forEach((s) => { const p = bookProgress(s); read += p.read; total += p.total; });
@@ -509,7 +510,7 @@ function drawTimer() {
   $("#timeLabel").textContent = running
     ? (mode === "focus" ? `Focusing on ${subj($("#focusSubject").value).name}` : "Break — stretch, drink water")
     : remaining === total() ? (mode === "focus" ? "Ready to focus" : "Ready for a break") : "Paused";
-  document.title = running ? `${fmt(remaining)} · ${mode === "focus" ? "Focus" : "Break"} — StudyNest` : "StudyNest — Study Planner";
+  document.title = running ? `${fmt(remaining)} · ${mode === "focus" ? "Focus" : "Break"} — Study with Ahmad` : "Study with Ahmad — Study Planner";
   const done = todaysSessions().length;
   $("#sessionDots").innerHTML = Array.from({ length: 4 }, (_, i) => `<i class="${i < done % 4 || (done && done % 4 === 0) ? "on" : ""}"></i>`).join("");
 }
@@ -967,7 +968,7 @@ $("#sampleBtn").onclick = () => {
   toast("Sample study history added — charts are filled in");
 };
 $("#clearBtn").onclick = async () => {
-  if (!confirm(token ? "Delete all your StudyNest data, in this browser AND in your cloud account? This can't be undone." : "Delete all your StudyNest data in this browser? This can't be undone.")) return;
+  if (!confirm(token ? "Delete all your Study with Ahmad data, in this browser AND in your cloud account? This can't be undone." : "Delete all your Study with Ahmad data in this browser? This can't be undone.")) return;
   state = defaults();
   saveLocal();
   if (token) { clearTimeout(syncTimer); try { await api("/api/state", { method: "PUT", body: JSON.stringify({ data: state }) }); } catch (e) {} }
@@ -1032,6 +1033,57 @@ giant.innerHTML = [...giant.textContent].map((c) => `<span class="ch">${c}</span
 // =====================================================================
 $("#greeting").innerHTML = greetingText();
 const heroWords = splitWords($("#greeting"));
+// Flip words (Aceternity-style): the last word of the greeting keeps changing
+$("#greeting").insertAdjacentHTML("beforeend", '<span class="flip-line"><span class="flip-wrap"><span id="flipWord">studying.</span></span></span>');
+const FLIP = ["studying.", "revising.", "practising.", "acing exams.", "learning."];
+let flipI = 0;
+setInterval(() => {
+  const el = $("#flipWord"), next = FLIP[++flipI % FLIP.length];
+  if (!A) { el.textContent = next; return; }
+  gsap.timeline()
+    .to(el, { yPercent: -110, filter: "blur(6px)", opacity: 0, duration: 0.45, ease: "power3.in" })
+    .add(() => { el.textContent = next; })
+    .fromTo(el, { yPercent: 110, filter: "blur(6px)", opacity: 0 }, { yPercent: 0, filter: "blur(0px)", opacity: 1, duration: 0.8, ease: "expo.out" });
+}, 2800);
+
+// Meteors for the exams section
+$("#meteors").innerHTML = Array.from({ length: 16 }, () =>
+  `<span class="meteor" style="left:${Math.round(Math.random() * 110)}%;animation-duration:${(3 + Math.random() * 6).toFixed(1)}s;animation-delay:${(Math.random() * 6).toFixed(1)}s"></span>`).join("");
+
+// Card spotlight + hero spotlight follow the mouse (cheap CSS variables, no library needed)
+const fine = matchMedia("(hover: hover) and (pointer: fine)").matches;
+const GLOW = ".panel, .stat-card, .task, .chapter, .block, .syl-tab, .timer-card, .exam";
+if (fine) {
+  document.addEventListener("pointermove", (e) => {
+    const card = e.target.closest(GLOW);
+    if (card) {
+      const r = card.getBoundingClientRect();
+      card.style.setProperty("--mx", e.clientX - r.left + "px");
+      card.style.setProperty("--my", e.clientY - r.top + "px");
+    }
+  }, { passive: true });
+  $("#hero").addEventListener("pointermove", (e) => {
+    const r = $("#hero").getBoundingClientRect();
+    $("#spotlight").style.setProperty("--sx", e.clientX - r.left + "px");
+    $("#spotlight").style.setProperty("--sy", e.clientY - r.top + "px");
+  }, { passive: true });
+}
+
+// Floating dock appears once you scroll past the dashboard
+const dock = $("#dock");
+if (!A) addEventListener("scroll", () => dock.classList.toggle("show", scrollY > innerHeight * 0.6), { passive: true });
+
+// Scramble text (Skiper-style): letters shuffle, then settle left to right
+function scramble(el) {
+  const final = el.textContent, chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789#%&";
+  let frame = 0;
+  const total = 22;
+  const id = setInterval(() => {
+    frame++;
+    el.textContent = [...final].map((c, i) => (c === " " || i < (frame / total) * final.length ? c : chars[Math.floor(Math.random() * chars.length)])).join("");
+    if (frame >= total) { clearInterval(id); el.textContent = final; }
+  }, 35);
+}
 rotateQuote();
 setInterval(rotateQuote, 8000);
 setMode("focus");
@@ -1068,6 +1120,8 @@ if (!A) {
     .from(".blob", { scale: 0, duration: 2.2, stagger: 0.15 }, "<")
     .from("#todayChip", { y: 20, opacity: 0, duration: 0.8 }, "<0.1")
     .from(heroWords, { yPercent: 120, rotate: 5, stagger: 0.06, duration: 1.2 }, "<0.1")
+    .from("#flipWord", { yPercent: 120, duration: 1.2 }, "<0.25")
+    .from(".dot-grid, .spotlight", { opacity: 0, duration: 1.5 }, "<")
     .from("#quote, .hero-cta > *", { y: 30, opacity: 0, stagger: 0.1, duration: 1 }, "<0.3")
     .from(".stat-card", { y: 60, opacity: 0, rotate: (i) => (i % 2 ? 4 : -4), stagger: 0.1, duration: 1.2, onStart: () => renderStats(true) }, "<0.1")
     .from(".ticker", { yPercent: 100, opacity: 0, duration: 1 }, "<0.3")
@@ -1084,7 +1138,7 @@ if (!A) {
     const words = splitWords(h);
     gsap.from(words, { yPercent: 120, rotate: 4, stagger: 0.05, duration: 1.1, ease: "expo.out", scrollTrigger: { trigger: h, start: "top 88%" } });
   });
-  $$("main .kicker").forEach((k) => gsap.from(k, { x: -30, opacity: 0, duration: 0.9, ease: "expo.out", scrollTrigger: { trigger: k, start: "top 90%" } }));
+  $$("main .kicker").forEach((k) => gsap.from(k, { x: -30, opacity: 0, duration: 0.9, ease: "expo.out", scrollTrigger: { trigger: k, start: "top 90%", onEnter: () => scramble(k) } }));
   $$(".reveal").forEach((el) => gsap.from(el, { y: 50, opacity: 0, duration: 1.1, ease: "expo.out", scrollTrigger: { trigger: el, start: "top 90%" } }));
 
   // Lists and charts animate when you reach them
@@ -1100,9 +1154,27 @@ if (!A) {
 
   // Highlight the nav link for the section on screen
   $$("main section[id]").forEach((sec) => {
-    const link = $(`.nav a[href="#${sec.id}"]`);
-    if (link) ScrollTrigger.create({ trigger: sec, start: "top 50%", end: "bottom 50%", onToggle: (s) => link.classList.toggle("active", s.isActive) });
+    const links = $$(`.nav a[href="#${sec.id}"], .dock a[href="#${sec.id}"]`);
+    if (links.length) ScrollTrigger.create({ trigger: sec, start: "top 50%", end: "bottom 50%", onToggle: (s) => links.forEach((l) => l.classList.toggle("active", s.isActive)) });
   });
+  ScrollTrigger.create({ trigger: "#syllabus", start: "top 85%", end: "max", onToggle: (s) => dock.classList.toggle("show", s.isActive) });
+
+  // Ticker speeds up with scroll velocity and follows scroll direction
+  const tickerTrack = $("#ticker");
+  tickerTrack.style.animation = "none";
+  const tickerTween = gsap.to(tickerTrack, { xPercent: -50, duration: 45, ease: "none", repeat: -1 });
+  tickerTween.totalTime(tickerTween.duration() * 100);
+  ScrollTrigger.create({
+    start: 0, end: "max",
+    onUpdate: (s) => {
+      gsap.to(tickerTween, { timeScale: s.direction * Math.min(1 + Math.abs(s.getVelocity()) / 200, 7), duration: 0.2, overwrite: true });
+      gsap.to(tickerTween, { timeScale: s.direction, duration: 1.2, delay: 0.25 });
+    },
+  });
+
+  // Meteors fade in, lamp glow breathes in the exams section
+  gsap.from(".lamp", { scaleX: 0.3, opacity: 0, duration: 1.8, ease: "expo.out", scrollTrigger: { trigger: "#exams", start: "top 70%" } });
+  gsap.to(".lamp", { opacity: 0.35, duration: 3, repeat: -1, yoyo: true, ease: "sine.inOut" });
 
   // Magnetic buttons (mouse only)
   if (matchMedia("(hover: hover) and (pointer: fine)").matches) {
@@ -1113,6 +1185,29 @@ if (!A) {
       });
       m.addEventListener("mouseleave", () => gsap.to(m, { x: 0, y: 0, duration: 0.9, ease: "elastic.out(1,0.35)" }));
     });
+
+    // 3D tilt (Aceternity 3D card): stat cards, exam cards and the flashcard lean toward the mouse
+    let tilted = null;
+    document.addEventListener("pointermove", (e) => {
+      const el = e.target.closest(".stat-card, .exam, .fc-stage");
+      if (tilted && tilted !== el) { gsap.to(tilted, { rotateX: 0, rotateY: 0, y: 0, duration: 0.9, ease: "elastic.out(1,0.5)" }); tilted = null; }
+      if (!el) return;
+      tilted = el;
+      const r = el.getBoundingClientRect(), x = (e.clientX - r.left) / r.width - 0.5, y = (e.clientY - r.top) / r.height - 0.5;
+      const k = el.classList.contains("fc-stage") ? 8 : 12;
+      gsap.to(el, { rotateY: x * k, rotateX: -y * k, y: -6, duration: 0.5, ease: "power3.out", transformPerspective: 900 });
+    }, { passive: true });
+
+    // Floating dock: icons magnify near the mouse, like the macOS dock
+    const dockItems = $$("a", dock);
+    dock.addEventListener("pointermove", (e) => {
+      dockItems.forEach((a) => {
+        const r = a.getBoundingClientRect(), d = Math.abs(e.clientX - (r.left + r.width / 2));
+        const s = 1 + Math.max(0, 1 - d / 130) * 0.55;
+        gsap.to(a, { scale: s, y: -(s - 1) * 22, duration: 0.25, ease: "power2.out" });
+      });
+    });
+    dock.addEventListener("pointerleave", () => gsap.to(dockItems, { scale: 1, y: 0, duration: 0.6, ease: "elastic.out(1,0.5)" }));
   }
   addEventListener("load", () => ScrollTrigger.refresh());
   document.fonts.ready.then(() => { ScrollTrigger.refresh(); movePill($("#modeTabs"), $("#modePill"), $("#modeTabs button.active")); });

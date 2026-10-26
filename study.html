@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>StudyNest — Study Planner</title>
+  <title>Study with Ahmad — Study Planner</title>
   <script>
     // Theme first so the page never flashes the wrong colours
     try { const t = localStorage.getItem("studynest-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
@@ -34,12 +34,17 @@
     <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
     <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></symbol>
     <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/></symbol>
+    <symbol id="i-cal" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></symbol>
+    <symbol id="i-cards" viewBox="0 0 24 24"><rect x="3" y="7" width="14" height="14" rx="3"/><path d="M7 3h11a3 3 0 0 1 3 3v11"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
   </svg>
 
   <!-- Intro loader -->
   <div class="loader" id="loader">
     <div class="loader-book"><i></i><i></i><i></i></div>
-    <div class="loader-logo"><span>Study</span><em>Nest</em></div>
+    <div class="loader-logo"><span>Study</span><span>with</span><em>Ahmad</em></div>
     <div class="loader-bar"><i id="loaderBar"></i></div>
   </div>
 
@@ -48,7 +53,7 @@
 
   <header class="header" id="header">
     <div class="container header-inner">
-      <a href="#top" class="logo"><span class="logo-mark"></span>Study<em>Nest</em></a>
+      <a href="#top" class="logo"><span class="logo-mark"></span>Study <em>with Ahmad</em></a>
       <nav class="nav" id="nav">
         <a href="#syllabus">Syllabus</a>
         <a href="#focus">Focus</a>
@@ -69,7 +74,9 @@
 
   <main id="top">
     <!-- Dashboard -->
-    <section class="hero">
+    <section class="hero" id="hero">
+      <div class="dot-grid"></div>
+      <div class="spotlight" id="spotlight"></div>
       <div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div>
       <div class="container hero-inner">
         <div class="hero-text">
@@ -77,7 +84,7 @@
           <h1 class="split-now" id="greeting">Good day, let's get studying.</h1>
           <p class="quote" id="quote"></p>
           <div class="hero-cta">
-            <a href="#syllabus" class="btn btn-primary magnetic"><span class="roll"><span>Open my syllabus</span></span></a>
+            <a href="#syllabus" class="btn btn-primary glow-border magnetic"><span class="roll"><span>Open my syllabus</span></span></a>
             <a href="#focus" class="btn btn-soft magnetic"><span class="roll"><span>Start a focus session</span></span></a>
           </div>
         </div>
@@ -242,6 +249,8 @@
 
     <!-- Exams -->
     <section class="section dark" id="exams">
+      <div class="meteors" id="meteors" aria-hidden="true"></div>
+      <div class="lamp" aria-hidden="true"></div>
       <div class="container">
         <div class="section-head">
           <div><p class="kicker">05 · Exams</p><h2 class="split">Count down, <em>stay calm.</em></h2></div>
@@ -329,10 +338,23 @@
     </section>
   </main>
 
+  <!-- Floating dock -->
+  <nav class="dock" id="dock" aria-label="Quick navigation">
+    <a href="#syllabus" data-sec="syllabus"><svg><use href="#i-book"/></svg><span class="tip">Syllabus</span></a>
+    <a href="#focus" data-sec="focus"><svg><use href="#i-clock"/></svg><span class="tip">Focus timer</span></a>
+    <a href="#tasks" data-sec="tasks"><svg><use href="#i-check"/></svg><span class="tip">Tasks</span></a>
+    <a href="#timetable" data-sec="timetable"><svg><use href="#i-cal"/></svg><span class="tip">Timetable</span></a>
+    <a href="#exams" data-sec="exams"><svg><use href="#i-target"/></svg><span class="tip">Exams</span></a>
+    <a href="#flashcards" data-sec="flashcards"><svg><use href="#i-cards"/></svg><span class="tip">Flashcards</span></a>
+    <a href="#progress-sec" data-sec="progress-sec"><svg><use href="#i-chart"/></svg><span class="tip">Progress</span></a>
+    <i class="dock-sep"></i>
+    <a href="#top" data-sec="top"><svg><use href="#i-up"/></svg><span class="tip">Back to top</span></a>
+  </nav>
+
   <footer class="footer">
     <div class="footer-giant" id="footerGiant" aria-hidden="true">Keep going.</div>
     <div class="container footer-bottom">
-      <a href="#top" class="logo"><span class="logo-mark"></span>Study<em>Nest</em></a>
+      <a href="#top" class="logo"><span class="logo-mark"></span>Study <em>with Ahmad</em></a>
       <span class="muted small">Your data is saved in this browser only.</span>
       <div class="footer-actions">
         <button class="link-btn" id="sampleBtn">Load sample data</button>
@@ -345,7 +367,7 @@
   <div class="setup" id="setup" aria-hidden="true">
     <div class="setup-bg" id="setupBg"></div>
     <div class="setup-card" role="dialog" aria-labelledby="setupTitle">
-      <p class="kicker">Welcome to StudyNest</p>
+      <p class="kicker">Welcome to Study with Ahmad</p>
       <h2 id="setupTitle">Which class are you in?</h2>
       <div class="setup-step">
         <span class="step-label">Class</span>
@@ -360,7 +382,7 @@
         <span class="step-label">Group</span>
         <div class="choice-row" id="groupChoices"></div>
       </div>
-      <button class="btn btn-primary btn-wide" id="setupDone" disabled>Build my planner</button>
+      <button class="btn btn-primary btn-wide glow-border" id="setupDone" disabled>Build my planner</button>
       <p class="setup-alt">Already have an account? <button class="link-btn" id="setupSignIn">Sign in</button></p>
     </div>
   </div>
@@ -373,7 +395,7 @@
       <div id="authForms">
         <p class="kicker">Save to the cloud</p>
         <h2 id="authTitle">Keep your planner safe.</h2>
-        <p class="muted auth-note">Your tasks, timetable, syllabus progress and study sessions are stored in the StudyNest database — sign in on any phone or laptop and carry on.</p>
+        <p class="muted auth-note">Your tasks, timetable, syllabus progress and study sessions are stored in the Study with Ahmad database — sign in on any phone or laptop and carry on.</p>
         <div class="auth-tabs" id="authTabs">
           <span class="auth-pill" id="authPill"></span>
           <button data-tab="login" class="active">Sign in</button>
@@ -395,7 +417,7 @@
           <button class="btn btn-primary" id="signOut">Sign out</button>
         </div>
       </div>
-      <p class="muted small auth-offline" id="authOffline" hidden>Cloud saving needs the StudyNest server. Start it with <b>uv run website</b>, then open <b>http://127.0.0.1:8000</b>.</p>
+      <p class="muted small auth-offline" id="authOffline" hidden>Cloud saving needs the Study with Ahmad server. Start it with <b>uv run website</b>, then open <b>http://127.0.0.1:8000</b>.</p>
     </div>
   </div>
 

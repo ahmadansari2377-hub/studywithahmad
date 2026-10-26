@@ -1,4 +1,4 @@
-"""StudyNest server: serves the planner and stores each student's data in Postgres (Neon).
+"""Study with Ahmad server: serves the planner and stores each student's data in Postgres (Neon).
 
 Run with:  uv run website   →  http://127.0.0.1:8000
 """
@@ -77,7 +77,7 @@ async def lifespan(_app: FastAPI):
     pool.close()
 
 
-app = FastAPI(title="StudyNest", lifespan=lifespan)
+app = FastAPI(title="Study with Ahmad", lifespan=lifespan)
 
 
 # ---------- Passwords & tokens ----------

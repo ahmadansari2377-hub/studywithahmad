@@ -60,7 +60,7 @@ const SYLLABUS = {
   },
 };
 
-// Starter revision cards (written for StudyNest, not copied from the books)
+// Starter revision cards (written for Study with Ahmad, not copied from the books)
 const STARTER_CARDS = {
   9: {
     physics: [
