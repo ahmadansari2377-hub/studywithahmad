@@ -36,22 +36,24 @@ You need [uv](https://docs.astral.sh/uv/) installed.
 
 3. Open **http://127.0.0.1:8000**.
 
-The server creates its tables (`users`, `auth_tokens`, `planner_data`, `login_failures`) on first start. You can also open `study.html` directly without the server, but then data is only saved in that browser.
+The server creates its tables (`users`, `auth_tokens`, `planner_data`, `login_failures`) on first start. You can also open `public/index.html` directly without the server, but then data is only saved in that browser.
 
-## Put it online (Render, free)
+## Put it online (Vercel, free)
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/ahmadansari2377-hub/website)
-
-1. Click the button above, or sign in at [render.com](https://render.com) with your GitHub account and choose **New → Blueprint** with this repository.
-2. Click **Apply**. Render reads `render.yaml`.
-3. When it asks for **DATABASE_URL**, paste the same Neon URL that is in your `.env` file.
-4. Wait for the first build (a few minutes). Your site will be at **https://study-with-ahmad.onrender.com**, or a similar link if that name is taken.
+1. Sign in at [vercel.com](https://vercel.com) with your GitHub account.
+2. Go to [vercel.com/new](https://vercel.com/new), find the **website** repository and click **Import**.
+3. Open **Environment Variables** and add:
+   - Name: `DATABASE_URL`
+   - Value: the same Neon URL that is in your `.env` file
+4. Click **Deploy**. After about a minute your site is live at a link like **https://website-xxxx.vercel.app**. You can rename it under **Settings → Domains**, for example to `studywithahmad.vercel.app`.
 
 After that, every `git push` to `main` updates the live site automatically.
 
-Good to know:
-- The free plan sleeps after about 15 minutes without visitors. The next visit takes up to a minute to wake it up.
-- If the build says Python 3.14 isn't available, add an environment variable `PYTHON_VERSION` with a full version number such as `3.14.0`.
+How it runs on Vercel:
+- Files in `public/` (the page, CSS and JS) are served from Vercel's CDN, so the page loads fast and never "sleeps".
+- `app.py` exposes the FastAPI app, which runs as a Vercel Function for `/api/...` requests. The first request after a quiet period takes a second or two to start.
+- Python 3.14 is read from `.python-version`, and dependencies come from `pyproject.toml` / `uv.lock`.
+- Tip: in the Neon dashboard you can copy the **pooled** connection string (its host contains `-pooler`). It handles many short serverless connections better.
 
 ## Security
 
@@ -64,9 +66,10 @@ Good to know:
 
 | File | What it does |
 |---|---|
-| `study.html`, `study.css`, `study.js` | The planner (page, styles, behaviour) |
-| `syllabus.js` | PTB chapter lists and starter flashcards |
+| `public/index.html`, `public/study.css`, `public/study.js` | The planner (page, styles, behaviour) |
+| `public/syllabus.js` | PTB chapter lists and starter flashcards |
 | `src/website/server.py` | FastAPI server: accounts and planner storage in Postgres |
-| `src/website/__init__.py` | `uv run website` entry point |
+| `src/website/__init__.py` | `uv run website` entry point (local) |
+| `app.py` | Vercel entry point |
 
 Chapter names follow the 2026–27 PTB editions. Always check them against your printed textbook. The official books are free at [pctb.punjab.gov.pk](https://pctb.punjab.gov.pk/).

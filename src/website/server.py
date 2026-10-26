@@ -1,6 +1,7 @@
 """Study with Ahmad server: serves the planner and stores each student's data in Postgres (Neon).
 
-Run with:  uv run website   →  http://127.0.0.1:8000
+Run locally with:  uv run website   →  http://127.0.0.1:8000
+On Vercel, app.py at the project root exposes this `app`, and files in public/ come from the CDN.
 """
 
 import hashlib
@@ -19,6 +20,8 @@ from psycopg_pool import ConnectionPool
 from pydantic import BaseModel
 
 ROOT = Path(__file__).resolve().parents[2]
+PUBLIC = ROOT / "public"
+ON_VERCEL = bool(os.environ.get("VERCEL"))
 MAX_STATE_BYTES = 2_000_000
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_.]{3,30}$")
 TOKEN_DAYS = 30            # stay signed in for 30 days
@@ -26,10 +29,11 @@ MAX_USER_FAILS = 3         # wrong passwords allowed per account...
 MAX_IP_FAILS = 10          # ...and per internet connection
 LOCK_MINUTES = 15          # before trying again
 
-# Only these files are served — never .env, .git or source code.
+# Only these files from public/ are served — never .env, .git or source code.
+# (On Vercel the CDN serves public/ directly; this is the local / fallback path.)
 PUBLIC_FILES = {
-    "": ("study.html", "text/html"),
-    "study.html": ("study.html", "text/html"),
+    "": ("index.html", "text/html"),
+    "index.html": ("index.html", "text/html"),
     "study.css": ("study.css", "text/css"),
     "study.js": ("study.js", "text/javascript"),
     "syllabus.js": ("syllabus.js", "text/javascript"),
@@ -82,7 +86,8 @@ pool: ConnectionPool | None = None
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     global pool
-    pool = ConnectionPool(database_url(), min_size=1, max_size=5, open=True)
+    # check_connection replaces connections that went stale while a serverless instance was idle
+    pool = ConnectionPool(database_url(), min_size=1, max_size=5, open=True, check=ConnectionPool.check_connection)
     with pool.connection() as conn:
         conn.execute(SCHEMA)
     yield
@@ -167,7 +172,12 @@ def signup(body: Credentials):
 
 
 def client_ip(request: Request) -> str:
-    # uvicorn fills request.client from X-Forwarded-For when FORWARDED_ALLOW_IPS trusts the proxy
+    if ON_VERCEL:
+        # Vercel's edge sets these headers itself, so visitors can't fake them
+        ip = request.headers.get("x-real-ip") or request.headers.get("x-forwarded-for", "").split(",")[0]
+        if ip.strip():
+            return ip.strip()
+    # Locally, uvicorn fills request.client (from X-Forwarded-For only when the proxy is trusted)
     return request.client.host if request.client else "unknown"
 
 
@@ -252,4 +262,4 @@ def page(name: str):
     if name not in PUBLIC_FILES:
         raise HTTPException(404, "Not found")
     file, media = PUBLIC_FILES[name]
-    return FileResponse(ROOT / file, media_type=media, headers={"Cache-Control": "no-cache"})
+    return FileResponse(PUBLIC / file, media_type=media, headers={"Cache-Control": "no-cache"})

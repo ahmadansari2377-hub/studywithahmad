@@ -3,7 +3,8 @@ def main() -> None:
 
     import uvicorn
 
-    # Locally: http://127.0.0.1:8000. On a host like Render, PORT is set and we listen publicly.
+    # Locally: http://127.0.0.1:8000. On a host that sets PORT we listen publicly.
+    # (On Vercel this isn't used — Vercel loads `app` from app.py instead.)
     port = int(os.environ.get("PORT", 8000))
     host = os.environ.get("HOST") or ("0.0.0.0" if "PORT" in os.environ else "127.0.0.1")
     print(f"Study with Ahmad running at http://{'127.0.0.1' if host == '0.0.0.0' else host}:{port}  (Ctrl+C to stop)")
