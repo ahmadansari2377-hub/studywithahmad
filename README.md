@@ -40,8 +40,10 @@ The server creates its tables (`users`, `auth_tokens`, `planner_data`, `login_fa
 
 ## Put it online (Render, free)
 
-1. Sign in at [render.com](https://render.com) with your GitHub account.
-2. Click **New → Blueprint**, choose this repository, and click **Apply**. Render reads `render.yaml`.
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/ahmadansari2377-hub/website)
+
+1. Click the button above, or sign in at [render.com](https://render.com) with your GitHub account and choose **New → Blueprint** with this repository.
+2. Click **Apply**. Render reads `render.yaml`.
 3. When it asks for **DATABASE_URL**, paste the same Neon URL that is in your `.env` file.
 4. Wait for the first build (a few minutes). Your site will be at **https://study-with-ahmad.onrender.com**, or a similar link if that name is taken.
 
