@@ -11,3 +11,4 @@ wheels/
 
 # Secrets (database URL, API keys)
 .env
+.env.*
