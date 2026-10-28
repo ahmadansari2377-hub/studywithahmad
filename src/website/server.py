@@ -40,17 +40,25 @@ PUBLIC_FILES = {
 }
 
 
+def clean_url(value: str) -> str:
+    """Pull the postgresql://... part out of whatever was pasted (quotes, "DATABASE_URL=", Neon's psql '...')."""
+    match = re.search(r"postgres(?:ql)?://[^\s'\"]+", value)
+    if not match:
+        raise RuntimeError("DATABASE_URL is set but has no postgresql://... link in it")
+    return match.group(0)
+
+
 def database_url() -> str:
     """DATABASE_URL from the environment, or from .env (keys like "data base url" are accepted)."""
-    if os.environ.get("DATABASE_URL"):
-        return os.environ["DATABASE_URL"]
+    if os.environ.get("DATABASE_URL", "").strip():
+        return clean_url(os.environ["DATABASE_URL"])
     env = ROOT / ".env"
     if env.exists():
         for line in env.read_text(encoding="utf-8").splitlines():
             key, sep, value = line.partition("=")
             if sep and re.sub(r"[^a-z]", "", key.lower()) == "databaseurl":
-                return value.strip().strip("'\"")
-    raise RuntimeError("No database URL found. Add DATABASE_URL=postgresql://... to .env")
+                return clean_url(value)
+    raise RuntimeError("DATABASE_URL is not set. Add it in Vercel → Settings → Environment Variables (or in .env)")
 
 
 SCHEMA = """
@@ -81,17 +89,35 @@ CREATE INDEX IF NOT EXISTS login_failures_ip_idx ON login_failures (ip, attempte
 """
 
 pool: ConnectionPool | None = None
+startup_error = ""
+
+
+def db():
+    """A pooled connection, or a readable 503 if the database never came up (instead of crashing the app)."""
+    if pool is None:
+        raise HTTPException(503, f"Database not connected: {startup_error}")
+    return pool.connection()
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    global pool
-    # check_connection replaces connections that went stale while a serverless instance was idle
-    pool = ConnectionPool(database_url(), min_size=1, max_size=5, open=True, check=ConnectionPool.check_connection)
-    with pool.connection() as conn:
-        conn.execute(SCHEMA)
+    global pool, startup_error
+    try:
+        # check_connection replaces connections that went stale while a serverless instance was idle
+        pool = ConnectionPool(database_url(), min_size=1, max_size=5, open=True, timeout=15,
+                              check=ConnectionPool.check_connection)
+        with db() as conn:
+            conn.execute(SCHEMA)
+    except Exception as exc:
+        if pool is not None:
+            pool.close()
+            pool = None
+        # never echo the password back
+        startup_error = re.sub(r"://[^@\s]*@", "://***@", f"{type(exc).__name__}: {exc}")
+        print("Database startup failed:", startup_error)
     yield
-    pool.close()
+    if pool is not None:
+        pool.close()
 
 
 app = FastAPI(title="Study with Ahmad", lifespan=lifespan)
@@ -124,7 +150,7 @@ def current_user(authorization: str = Header(default="")) -> dict:
     token = authorization.removeprefix("Bearer ").strip()
     if not token:
         raise HTTPException(401, "Please sign in")
-    with pool.connection() as conn:
+    with db() as conn:
         row = conn.execute(
             "SELECT u.id, u.username FROM auth_tokens t JOIN users u ON u.id = t.user_id "
             "WHERE t.token_hash = %s AND t.created_at > now() - make_interval(days => %s)",
@@ -147,7 +173,7 @@ class StateIn(BaseModel):
 
 @app.get("/api/health")
 def health():
-    with pool.connection() as conn:
+    with db() as conn:
         conn.execute("SELECT 1")
     return {"ok": True}
 
@@ -159,7 +185,7 @@ def signup(body: Credentials):
         raise HTTPException(400, "Username must be 3–30 letters, numbers, dots or underscores")
     if len(body.password) < 6:
         raise HTTPException(400, "Password must be at least 6 characters")
-    with pool.connection() as conn:
+    with db() as conn:
         exists = conn.execute("SELECT 1 FROM users WHERE lower(username) = lower(%s)", (username,)).fetchone()
         if exists:
             raise HTTPException(409, "That username is taken — try another")
@@ -189,7 +215,7 @@ def minutes_word(seconds: float) -> str:
 @app.post("/api/login")
 def login(body: Credentials, request: Request):
     username, ip = body.username.strip().lower(), client_ip(request)
-    with pool.connection() as conn:
+    with db() as conn:
         conn.execute("DELETE FROM login_failures WHERE attempted_at < now() - interval '1 day'")
         user_fails, user_wait = conn.execute(
             """SELECT count(*), EXTRACT(EPOCH FROM min(attempted_at) + make_interval(mins => %s) - now())
@@ -223,7 +249,7 @@ def login(body: Credentials, request: Request):
 
 @app.post("/api/logout")
 def logout(user: dict = Depends(current_user)):
-    with pool.connection() as conn:
+    with db() as conn:
         conn.execute("DELETE FROM auth_tokens WHERE token_hash = %s", (token_hash(user["token"]),))
     return {"ok": True}
 
@@ -235,7 +261,7 @@ def me(user: dict = Depends(current_user)):
 
 @app.get("/api/state")
 def get_state(user: dict = Depends(current_user)):
-    with pool.connection() as conn:
+    with db() as conn:
         row = conn.execute("SELECT data, updated_at FROM planner_data WHERE user_id = %s", (user["id"],)).fetchone()
     if not row:
         return {"data": None, "updated_at": None}
@@ -246,7 +272,7 @@ def get_state(user: dict = Depends(current_user)):
 def put_state(body: StateIn, user: dict = Depends(current_user)):
     if len(json.dumps(body.data)) > MAX_STATE_BYTES:
         raise HTTPException(413, "Planner data is too large")
-    with pool.connection() as conn:
+    with db() as conn:
         updated = conn.execute(
             """INSERT INTO planner_data (user_id, data, updated_at) VALUES (%s, %s, now())
                ON CONFLICT (user_id) DO UPDATE SET data = EXCLUDED.data, updated_at = now()
