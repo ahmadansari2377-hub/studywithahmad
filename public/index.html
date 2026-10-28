@@ -8,12 +8,17 @@
   <link rel="manifest" href="/manifest.webmanifest" />
   <meta name="theme-color" content="#5b4bf5" />
   <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="Study Ahmad" />
   <meta name="description" content="Free study planner for Punjab Board Matric and Inter students. Also available as an Android and Windows app." />
   <script>
     // Theme first so the page never flashes the wrong colours
-    try { const t = localStorage.getItem("studynest-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+    try {
+      const t = localStorage.getItem("studynest-theme"), a = localStorage.getItem("swa-accent"), r = document.documentElement;
+      if (t === "amoled") { r.dataset.theme = "dark"; r.dataset.amoled = "1"; } else if (t) r.dataset.theme = t;
+      if (a) r.dataset.accent = a;
+    } catch (e) {}
     if (!matchMedia("(prefers-reduced-motion: reduce)").matches) document.documentElement.classList.add("anim");
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -105,17 +110,19 @@
           <a href="#get-app" class="app-flag" id="appFlag"><b>New</b><span>Android &amp; PC app — download free</span><svg><use href="#i-right"/></svg></a>
           <p class="chip" id="todayChip"></p>
           <h1 class="split-now" id="greeting">Good day, let's get studying.</h1>
+          <p class="tagline" id="tagline"></p>
           <p class="quote" id="quote"></p>
+          <div class="review-due" id="reviewDue" hidden></div>
           <div class="hero-cta">
             <a href="#syllabus" class="btn btn-primary glow-border magnetic"><span class="roll"><span>Open my syllabus</span></span></a>
             <a href="#focus" class="btn btn-soft magnetic"><span class="roll"><span>Start a focus session</span></span></a>
           </div>
         </div>
         <div class="stat-grid" id="statGrid">
-          <div class="stat-card c1"><svg><use href="#i-clock"/></svg><b id="statFocus">0</b><span>minutes focused today</span></div>
-          <div class="stat-card c2"><svg><use href="#i-check"/></svg><b id="statTasks">0</b><span>tasks done today</span></div>
-          <div class="stat-card c3"><svg><use href="#i-flame"/></svg><b id="statStreak">0</b><span>day study streak</span></div>
-          <div class="stat-card c4"><svg><use href="#i-target"/></svg><b id="statExam">–</b><span id="statExamLabel">days to next exam</span></div>
+          <div class="stat-card c1"><div class="stat-ring"><svg viewBox="0 0 44 44"><circle class="sr-bg" cx="22" cy="22" r="19"/><circle class="sr-fg" id="ringFocus" cx="22" cy="22" r="19"/></svg><svg class="sr-ico"><use href="#i-clock"/></svg></div><b id="statFocus">0</b><span>minutes focused today</span><small class="stat-goal" id="goalFocus"></small></div>
+          <div class="stat-card c2"><div class="stat-ring"><svg viewBox="0 0 44 44"><circle class="sr-bg" cx="22" cy="22" r="19"/><circle class="sr-fg" id="ringTasks" cx="22" cy="22" r="19"/></svg><svg class="sr-ico"><use href="#i-check"/></svg></div><b id="statTasks">0</b><span>tasks done today</span><small class="stat-goal" id="goalTasks"></small></div>
+          <div class="stat-card c3"><div class="stat-ring"><svg viewBox="0 0 44 44"><circle class="sr-bg" cx="22" cy="22" r="19"/><circle class="sr-fg" id="ringStreak" cx="22" cy="22" r="19"/></svg><svg class="sr-ico"><use href="#i-flame"/></svg></div><span class="streak-badge" id="streakBadge"></span><b id="statStreak">0</b><span>day study streak</span><small class="stat-goal" id="goalStreak"></small></div>
+          <div class="stat-card c4"><div class="stat-ring"><svg viewBox="0 0 44 44"><circle class="sr-bg" cx="22" cy="22" r="19"/><circle class="sr-fg" id="ringExam" cx="22" cy="22" r="19"/></svg><svg class="sr-ico"><use href="#i-target"/></svg></div><b id="statExam">–</b><span id="statExamLabel">days to next exam</span><small class="stat-goal" id="goalExam"></small></div>
         </div>
       </div>
       <div class="ticker"><div class="ticker-track" id="ticker"></div></div>
@@ -177,6 +184,7 @@
               <button data-mode="focus" class="active">Focus</button>
               <button data-mode="short">Short break</button>
               <button data-mode="long">Long break</button>
+              <button data-mode="exam">Mock exam</button>
             </div>
             <div class="ring-wrap">
               <svg class="ring" viewBox="0 0 220 220">
@@ -195,6 +203,13 @@
               <button class="round-btn" id="skipBtn" aria-label="Skip"><svg><use href="#i-skip"/></svg></button>
             </div>
             <div class="session-dots" id="sessionDots"></div>
+            <div class="sounds" id="sounds">
+              <span class="sounds-label">Study sounds</span>
+              <button data-sound="rain">🌧️ Rain</button>
+              <button data-sound="brown">🌊 Deep noise</button>
+              <button data-sound="white">🌬️ White noise</button>
+              <input type="range" id="soundVol" min="0.05" max="0.6" step="0.05" value="0.3" aria-label="Sound volume" />
+            </div>
           </div>
           <div class="focus-side">
             <div class="panel reveal">
@@ -204,11 +219,30 @@
                 <label>Focus <input type="number" min="1" max="120" id="durFocus" class="input small" /> min</label>
                 <label>Short <input type="number" min="1" max="60" id="durShort" class="input small" /> min</label>
                 <label>Long <input type="number" min="1" max="60" id="durLong" class="input small" /> min</label>
+                <label>Daily goal <input type="number" min="10" max="720" step="10" id="durGoal" class="input small" /> min</label>
               </div>
+              <button class="btn btn-soft reader-open" id="readerOpen" type="button"><svg><use href="#i-book"/></svg>Open a textbook PDF</button>
             </div>
             <div class="panel reveal">
               <div class="panel-head"><h3>Today's sessions</h3><span class="muted" id="sessionCount">0 sessions</span></div>
               <ul class="session-log" id="sessionLog"></ul>
+            </div>
+          </div>
+          <div class="panel reader" id="reader" hidden>
+            <div class="panel-head">
+              <h3 id="readerTitle">Textbook reader</h3>
+              <div class="reader-actions">
+                <label class="btn btn-soft reader-pick"><svg><use href="#i-book"/></svg><span>Open PDF</span><input type="file" accept="application/pdf" id="pdfFile" hidden /></label>
+                <button class="icon-btn" id="readerClose" type="button" aria-label="Close reader"><svg class="x"><use href="#i-plus"/></svg></button>
+              </div>
+            </div>
+            <iframe id="pdfFrame" title="Textbook PDF" hidden></iframe>
+            <div class="reader-empty" id="readerEmpty">
+              <p>Read your book right next to the timer, without opening other tabs.</p>
+              <ol class="app-steps">
+                <li>Download your PTB book free from <a href="https://pctb.punjab.gov.pk/" target="_blank" rel="noopener">pctb.punjab.gov.pk</a>.</li>
+                <li>Press <b>Open PDF</b> and choose it. The file stays on your device.</li>
+              </ol>
             </div>
           </div>
         </div>
@@ -237,6 +271,7 @@
           <button data-filter="open">To do</button>
           <button data-filter="done">Done</button>
         </div>
+        <p class="muted small drag-hint reveal">Tip: drag a task to reorder it, or drop it into another priority.</p>
         <ul class="task-list" id="taskList"></ul>
       </div>
     </section>
@@ -340,8 +375,12 @@
             <ul class="subject-bars" id="subjectBars"></ul>
           </div>
           <div class="panel heat-panel reveal">
-            <div class="panel-head"><h3>Study calendar · last 15 weeks</h3><span class="heat-legend">Less <i class="l0"></i><i class="l1"></i><i class="l2"></i><i class="l3"></i><i class="l4"></i> More</span></div>
+            <div class="panel-head"><h3>Study streak · last 52 weeks <span class="muted small" id="heatTotal"></span></h3><span class="heat-legend">Less <i class="l0"></i><i class="l1"></i><i class="l2"></i><i class="l3"></i><i class="l4"></i> More</span></div>
             <div class="heatmap" id="heatmap"></div>
+          </div>
+          <div class="panel reveal">
+            <div class="panel-head"><h3>Syllabus by subject</h3><span class="muted small">Read · revised</span></div>
+            <ul class="syl-bars" id="sylBars"></ul>
           </div>
           <div class="panel reveal">
             <div class="panel-head"><h3>Extra subjects</h3><span class="muted small">Your class subjects are added automatically</span></div>
@@ -418,8 +457,21 @@
     <div class="footer-giant" id="footerGiant" aria-hidden="true">Keep going.</div>
     <div class="container footer-bottom">
       <a href="#top" class="logo" aria-label="Study with Ahmad — home"><svg class="logo-svg" viewBox="0 0 40 40" aria-hidden="true"><rect class="lm-bg" width="40" height="40" rx="12" fill="url(#lgBrand)" /><path class="lm-page-l" d="M20 15C16.5 12.3 12.2 11.8 8.5 13.1v15.2c3.7-1.3 8-.8 11.5 1.9z" fill="#fff" /><path class="lm-page-r" d="M20 15c3.5-2.7 7.8-3.2 11.5-1.9v15.2c-3.7-1.3-8-.8-11.5 1.9z" fill="#fff" fill-opacity=".8" /><path class="lm-star" d="M31 3.2l1.05 2.75 2.75 1.05-2.75 1.05L31 10.8l-1.05-2.75L27.2 7l2.75-1.05z" fill="#ffd166" /></svg><span class="logo-text"><small>Study with</small><b>Ahmad</b></span></a>
-      <span class="muted small">Your data is saved in this browser only.</span>
+      <div class="appearance">
+        <div class="seg" id="themeSeg" role="group" aria-label="Theme">
+          <button data-theme-set="light">Light</button><button data-theme-set="dark">Dark</button><button data-theme-set="amoled">AMOLED</button>
+        </div>
+        <div class="swatches" id="accentSwatches" role="group" aria-label="Accent colour">
+          <button data-accent-set="" style="--sw:#6d5dfc" title="Violet" aria-label="Violet"></button>
+          <button data-accent-set="pink" style="--sw:#e0307a" title="Pink Jersey" aria-label="Pink Jersey"></button>
+          <button data-accent-set="ocean" style="--sw:#0f7ad8" title="Ocean" aria-label="Ocean"></button>
+          <button data-accent-set="emerald" style="--sw:#0e9f6e" title="Emerald" aria-label="Emerald"></button>
+          <button data-accent-set="sunset" style="--sw:#e8590c" title="Sunset" aria-label="Sunset"></button>
+        </div>
+      </div>
       <div class="footer-actions">
+        <button class="link-btn" id="exportBtn">Export backup</button>
+        <label class="link-btn" for="importFile">Import backup</label><input type="file" accept="application/json,.json" id="importFile" hidden />
         <button class="link-btn" id="sampleBtn">Load sample data</button>
         <button class="link-btn danger" id="clearBtn">Clear everything</button>
       </div>
@@ -429,24 +481,38 @@
   <!-- Class & group picker -->
   <div class="setup" id="setup" aria-hidden="true">
     <div class="setup-bg" id="setupBg"></div>
-    <div class="setup-card" role="dialog" aria-labelledby="setupTitle">
-      <p class="kicker">Welcome to Study with Ahmad</p>
-      <h2 id="setupTitle">Which class are you in?</h2>
-      <div class="setup-step">
-        <span class="step-label">Class</span>
+    <div class="setup-card stepper" role="dialog" aria-labelledby="setupTitle">
+      <div class="step-dots" id="stepDots"><i></i><i></i><i></i><i></i></div>
+      <div class="step" data-step="0">
+        <p class="kicker">Step 1 of 4</p>
+        <h2 id="setupTitle">Welcome to Study with Ahmad 👋</h2>
+        <p class="muted step-text">Your free planner for Punjab Board Matric and Inter: every PTB chapter, a focus timer, tasks, timetable, exam countdowns and flashcards. Set it up in three quick steps.</p>
+        <button class="btn btn-primary btn-wide glow-border" data-go="1">Let's start</button>
+        <p class="setup-alt">Already have an account? <button class="link-btn" id="setupSignIn">Sign in</button></p>
+      </div>
+      <div class="step" data-step="1">
+        <p class="kicker">Step 2 of 4</p>
+        <h2>Which class are you in?</h2>
         <div class="choice-row" id="classChoices">
           <button data-cls="9"><b>9th</b><small>Matric · Part 1</small></button>
           <button data-cls="10"><b>10th</b><small>Matric · Part 2</small></button>
           <button data-cls="11"><b>11th</b><small>Inter · 1st year</small></button>
           <button data-cls="12"><b>12th</b><small>Inter · 2nd year</small></button>
         </div>
+        <div class="step-nav"><button class="btn btn-soft" data-go="0">Back</button><button class="btn btn-primary" data-go="2" id="stepClassNext" disabled>Next</button></div>
       </div>
-      <div class="setup-step">
-        <span class="step-label">Group</span>
+      <div class="step" data-step="2">
+        <p class="kicker">Step 3 of 4</p>
+        <h2>Select your subjects group</h2>
         <div class="choice-row" id="groupChoices"></div>
+        <div class="step-nav"><button class="btn btn-soft" data-go="1">Back</button><button class="btn btn-primary" data-go="3" id="stepGroupNext" disabled>Next</button></div>
       </div>
-      <button class="btn btn-primary btn-wide glow-border" id="setupDone" disabled>Build my planner</button>
-      <p class="setup-alt">Already have an account? <button class="link-btn" id="setupSignIn">Sign in</button></p>
+      <div class="step" data-step="3">
+        <p class="kicker">Step 4 of 4</p>
+        <h2>Generate my planner! 🚀</h2>
+        <div class="step-summary" id="stepSummary"></div>
+        <div class="step-nav"><button class="btn btn-soft" data-go="2">Back</button><button class="btn btn-primary glow-border" id="setupDone" disabled>Generate my planner</button></div>
+      </div>
     </div>
   </div>
 
@@ -490,6 +556,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/lenis@1.1.13/dist/lenis.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.2/Sortable.min.js"></script>
   <script src="syllabus.js"></script>
   <script src="study.js"></script>
 </body>

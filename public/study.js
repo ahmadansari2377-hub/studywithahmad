@@ -24,7 +24,10 @@ function load() {
 }
 let state = load();
 function saveLocal() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
-function save() { saveLocal(); if (token) scheduleSync(); }
+// "dirty" = this device has changes the cloud hasn't got yet (e.g. made offline)
+const markDirty = (on) => { try { on ? localStorage.setItem("swa-dirty", "1") : localStorage.removeItem("swa-dirty"); } catch (e) {} };
+const isDirty = () => { try { return !!localStorage.getItem("swa-dirty"); } catch (e) { return false; } };
+function save() { saveLocal(); if (token) { markDirty(true); scheduleSync(); } }
 
 // ---------- Cloud database (needs the Study with Ahmad server: `uv run website`) ----------
 const CLOUD = location.protocol.startsWith("http");
@@ -60,11 +63,12 @@ function scheduleSync() {
   syncTimer = setTimeout(pushState, 900);
 }
 async function pushState() {
-  try { await api("/api/state", { method: "PUT", body: JSON.stringify({ data: state }) }); setSync("ok"); }
+  try { await api("/api/state", { method: "PUT", body: JSON.stringify({ data: state }) }); markDirty(false); setSync("ok"); }
   catch (e) { setSync("error"); syncTimer = setTimeout(pushState, 15000); }
 }
 // Cloud copy wins if it exists; otherwise this device's planner is uploaded.
 async function pullState() {
+  if (isDirty()) { await pushState(); return true; } // offline edits on this device are newer
   const res = await api("/api/state");
   if (res.data) { state = { ...defaults(), ...res.data }; saveLocal(); }
   else await pushState();
@@ -187,14 +191,26 @@ const centerOf = (el) => { const r = el.getBoundingClientRect(); return [r.left 
 // =====================================================================
 const setup = $("#setup");
 let pick = {};
+let setupStep = 0;
+function goStep(n) {
+  setupStep = n;
+  $$(".setup-card .step").forEach((el) => el.classList.toggle("active", +el.dataset.step === n));
+  $$("#stepDots i").forEach((d, i) => d.classList.toggle("on", i <= n));
+  if (n === 3) {
+    const g = groupOf(pick);
+    $("#stepSummary").innerHTML = g ? `<p><b>Class ${pick.cls}</b> · ${g.name}</p><div class="chips">${[...g.subjects, ...COMPULSORY[pick.cls]].map((id) => `<span class="tag"><i class="dot" style="background:${SUBJECT_INFO[id].color}"></i>${SUBJECT_INFO[id].name}</span>`).join("")}</div><p class="muted small">Every PTB chapter for these books, plus starter flashcards, is ready to go.</p>` : "";
+  }
+  if (A) gsap.fromTo($$(`.step[data-step="${n}"] > *`), { y: 20, opacity: 0 }, { y: 0, opacity: 1, stagger: 0.06, duration: 0.6, ease: "expo.out" });
+}
 function openSetup() {
   pick = state.profile ? { ...state.profile } : {};
   renderSetup();
   setup.classList.add("open");
   setup.setAttribute("aria-hidden", "false");
   if (lenis) lenis.stop();
-  if (A) gsap.fromTo($$(".setup-card > *"), { y: 24, opacity: 0 }, { y: 0, opacity: 1, stagger: 0.07, duration: 0.8, delay: 0.15, ease: "expo.out" });
+  goStep(state.profile ? 1 : 0);
 }
+setup.addEventListener("click", (e) => { const b = e.target.closest("[data-go]"); if (b && !b.disabled) goStep(+b.dataset.go); });
 function closeSetup(force) {
   if (!state.profile && force !== true) return; // a class must be chosen first
   setup.classList.remove("open");
@@ -209,9 +225,11 @@ function renderSetup() {
     <button data-group="${g.id}" class="${g.id === pick.group ? "active" : ""}"><b>${g.name}</b><small>${g.subjects.map((s) => SUBJECT_INFO[s].name).join(" · ")}</small></button>`).join("");
   if (A && groups.length) gsap.from($$("#groupChoices button"), { y: 16, opacity: 0, stagger: 0.06, duration: 0.6, ease: "expo.out" });
   $("#setupDone").disabled = !(pick.cls && pick.group);
+  $("#stepClassNext").disabled = !pick.cls;
+  $("#stepGroupNext").disabled = !(pick.cls && pick.group);
 }
-$("#classChoices").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) { pick.cls = +b.dataset.cls; renderSetup(); } });
-$("#groupChoices").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) { pick.group = b.dataset.group; renderSetup(); } });
+$("#classChoices").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) { pick.cls = +b.dataset.cls; renderSetup(); setTimeout(() => goStep(2), 280); } });
+$("#groupChoices").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) { pick.group = b.dataset.group; renderSetup(); setTimeout(() => goStep(3), 280); } });
 $("#setupBg").onclick = closeSetup;
 $("#classBtn").onclick = openSetup;
 $("#setupDone").onclick = () => {
@@ -355,6 +373,16 @@ function renderHeader() {
   $("#classBtnText").innerHTML = p ? `Class ${p.cls}<span class="cb-group"> · ${groupOf().name}</span>` : "Choose class";
   const now = new Date();
   $("#todayChip").textContent = now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" }) + (p ? ` · Class ${p.cls}` : "");
+  $("#tagline").innerHTML = taglineText();
+}
+function taglineText() {
+  const h = new Date().getHours();
+  const line = h < 5 ? "Burning the midnight oil? Don't forget to sleep. 😴"
+    : h < 12 ? "Good morning! Let's smash today's goals. ☀️"
+    : h < 17 ? "Afternoon push: one chapter at a time. 📚"
+    : h < 21 ? "Evening revision time. You've got this. ✨"
+    : "Ready for some night study? 🌙";
+  return username ? `<b>${esc(username)}</b>, ${line.charAt(0).toLowerCase()}${line.slice(1)}` : line;
 }
 function greetingText() {
   const h = new Date().getHours();
@@ -384,6 +412,7 @@ const statVals = () => {
   return {
     statFocus: todaysSessions().reduce((s, x) => s + x.min, 0),
     statTasks: state.tasks.filter((t) => t.doneAt === dayKey()).length,
+    tasksLeft: state.tasks.filter((t) => !t.done && t.due && t.due <= dayKey()).length,
     statStreak: streak(),
     statExam: ne ? Math.floor((new Date(ne.date) - Date.now()) / 864e5) : null,
     examName: ne ? ne.title : null,
@@ -400,7 +429,73 @@ function renderStats(animate) {
     } else el.textContent = v[k];
   });
   $("#statExamLabel").textContent = v.examName ? `days to ${v.examName}` : "no upcoming exams";
+  // Rings: today's focus vs the daily goal, tasks vs what's due, streak towards a full week, exam getting closer
+  const goal = state.settings.goal || 120, taskAll = v.statTasks + v.tasksLeft;
+  setRing("ringFocus", v.statFocus / goal);
+  setRing("ringTasks", taskAll ? v.statTasks / taskAll : 0);
+  setRing("ringStreak", v.statStreak ? (v.statStreak % 7 || 7) / 7 : 0);
+  setRing("ringExam", v.statExam === null ? 0 : 1 - Math.min(v.statExam, 90) / 90);
+  $("#goalFocus").textContent = v.statFocus >= goal ? "Daily goal reached! 🎯" : `of ${goal} min daily goal`;
+  $("#goalTasks").textContent = taskAll ? `${v.tasksLeft} still due today` : "nothing due today";
+  $("#goalStreak").textContent = v.statStreak ? `week ${Math.ceil(v.statStreak / 7)} · keep the flame alive` : "study today to light it";
+  $("#goalExam").textContent = v.statExam === null ? "" : v.statExam <= 7 ? "final week, revise daily" : "";
+  const badge = $("#streakBadge");
+  badge.textContent = v.statStreak ? `🔥 ${v.statStreak}` : "";
+  badge.closest(".stat-card").classList.toggle("hot", v.statStreak > 0);
+  renderReviewDue();
 }
+const RING_C = 2 * Math.PI * 19;
+function setRing(id, f) {
+  const el = $("#" + id);
+  el.style.strokeDasharray = RING_C;
+  el.style.strokeDashoffset = RING_C * (1 - Math.max(0, Math.min(1, f || 0)));
+}
+
+// ---------- Nazar-e-Saani: spaced repetition reminders ----------
+// After a chapter is read, revise it after 1, 3, 7, 14, 30 and 60 days; each revision pushes the next one further out.
+const REVIEW_GAPS = [1, 3, 7, 14, 30, 60];
+function reviewsDue() {
+  if (!state.profile) return [];
+  const today = dayKey(), out = [];
+  bookSubjects().forEach((s) => {
+    const b = bookOf(s);
+    if (!b) return;
+    b.chapters.forEach((name, i) => {
+      const n = b.start + i, pr = state.syl[sylKey(s, n)];
+      const last = pr && pr.r && (pr.vAt || pr.rAt);
+      if (!last) return;
+      const due = dayKey(addDays(new Date(last + "T00:00"), REVIEW_GAPS[Math.min(pr.n || 0, REVIEW_GAPS.length - 1)]));
+      if (due <= today) out.push({ s, n, name, last, ago: Math.round((new Date(today) - new Date(last)) / 864e5) });
+    });
+  });
+  return out.sort((a, b) => b.ago - a.ago);
+}
+function markRevised(pr) { pr.r = true; pr.v = true; pr.vAt = dayKey(); pr.n = (pr.n || 0) + 1; }
+function renderReviewDue() {
+  const box = $("#reviewDue");
+  if (!box) return;
+  const due = reviewsDue();
+  if (!due.length) { box.innerHTML = ""; box.hidden = true; return; }
+  box.hidden = false;
+  const top = due[0], info = SUBJECT_INFO[top.s];
+  box.innerHTML = `<div class="rd-head"><span class="rd-kicker">Nazar-e-Saani · ${due.length} revision${due.length === 1 ? "" : "s"} due</span></div>
+    <p>${username ? `<b>${esc(username)}</b>, you` : "You"} read <b style="color:${info.color}">${info.name} Ch ${top.n}</b> ${top.ago} day${top.ago === 1 ? "" : "s"} ago. A quick revision today locks it in.</p>
+    <ul>${due.slice(0, 3).map((d) => `<li style="--c:${SUBJECT_INFO[d.s].color}"><span class="dot"></span><span class="rd-name">${esc(SUBJECT_INFO[d.s].name)} · Ch ${d.n}: ${esc(d.name)}</span><button class="toggle rev" data-rev="${d.s}|${d.n}"><svg><use href="#i-check"/></svg>Revised</button></li>`).join("")}</ul>`;
+}
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-rev]");
+  if (!b) return;
+  const [s, n] = b.dataset.rev.split("|"), k = sylKey(s, +n);
+  const pr = state.syl[k] || {};
+  markRevised(pr);
+  state.syl[k] = pr;
+  save();
+  confetti(...centerOf(b), 30);
+  toast(`Revised! Next reminder in ${REVIEW_GAPS[Math.min(pr.n, REVIEW_GAPS.length - 1)]} days`);
+  renderReviewDue();
+  if (s === sylSubject) renderChapters();
+  updateSubjectProgress(s);
+});
 
 // =====================================================================
 //  Syllabus
@@ -491,7 +586,8 @@ $("#chapters").addEventListener("click", (e) => {
   }
   const pr = state.syl[k] || {};
   pr[btn.dataset.act] = !pr[btn.dataset.act];
-  if (btn.dataset.act === "v" && pr.v) pr.r = true; // revised implies read
+  if (btn.dataset.act === "r" && pr.r && !pr.rAt) pr.rAt = dayKey();
+  if (btn.dataset.act === "v" && pr.v) { markRevised(pr); if (!pr.rAt) pr.rAt = dayKey(); } // revised implies read
   state.syl[k] = pr;
   save();
   $(".toggle.read", li).classList.toggle("on", !!pr.r);
@@ -499,6 +595,7 @@ $("#chapters").addEventListener("click", (e) => {
   li.classList.toggle("revised", !!pr.v);
   if (A) gsap.fromTo(btn, { scale: 0.85 }, { scale: 1, duration: 0.6, ease: "elastic.out(1,0.4)" });
   updateSubjectProgress(sylSubject);
+  renderReviewDue();
   const p = bookProgress(sylSubject);
   if (pr[btn.dataset.act]) {
     if (p.read === p.total && btn.dataset.act === "r") { toast(`Whole ${SUBJECT_INFO[sylSubject].name} book read! 🎉`); confetti(...centerOf(li), 140); }
@@ -510,16 +607,18 @@ $("#chapters").addEventListener("click", (e) => {
 //  Focus timer
 // =====================================================================
 const C = 2 * Math.PI * 96;
+state.settings.exam = state.settings.exam || 180;
+state.settings.goal = state.settings.goal || 120;
 const timerCard = $("#timerCard");
 let mode = "focus", remaining = state.settings.focus * 60, running = false, endAt = 0, tickId = null;
 const total = () => state.settings[mode] * 60;
-const fmt = (s) => `${pad(Math.floor(s / 60))}:${pad(s % 60)}`;
+const fmt = (s) => s >= 3600 ? `${Math.floor(s / 3600)}:${pad(Math.floor((s % 3600) / 60))}:${pad(s % 60)}` : `${pad(Math.floor(s / 60))}:${pad(s % 60)}`;
 function drawTimer() {
   $("#timeText").textContent = fmt(remaining);
   $("#ringFg").style.strokeDashoffset = C * (1 - remaining / total());
   $("#timeLabel").textContent = running
-    ? (mode === "focus" ? `Focusing on ${subj($("#focusSubject").value).name}` : "Break — stretch, drink water")
-    : remaining === total() ? (mode === "focus" ? "Ready to focus" : "Ready for a break") : "Paused";
+    ? (mode === "exam" ? `Mock exam · ${subj($("#focusSubject").value).name}` : mode === "focus" ? `Focusing on ${subj($("#focusSubject").value).name}` : "Break — stretch, drink water")
+    : remaining === total() ? (mode === "exam" ? "3-hour board paper" : mode === "focus" ? "Ready to focus" : "Ready for a break") : "Paused";
   document.title = running ? `${fmt(remaining)} · ${mode === "focus" ? "Focus" : "Break"} — Study with Ahmad` : "Study with Ahmad — Study Planner";
   const done = todaysSessions().length;
   $("#sessionDots").innerHTML = Array.from({ length: 4 }, (_, i) => `<i class="${i < done % 4 || (done && done % 4 === 0) ? "on" : ""}"></i>`).join("");
@@ -533,7 +632,7 @@ function setMode(m) {
   mode = m;
   stopTimer();
   remaining = total();
-  timerCard.classList.remove("mode-focus", "mode-short", "mode-long");
+  timerCard.classList.remove("mode-focus", "mode-short", "mode-long", "mode-exam");
   timerCard.classList.add("mode-" + m);
   $$("#modeTabs button").forEach((b) => b.classList.toggle("active", b.dataset.mode === m));
   movePill($("#modeTabs"), $("#modePill"), $(`#modeTabs button[data-mode="${m}"]`));
@@ -560,7 +659,14 @@ function tick() {
 function finish() {
   stopTimer();
   chime();
-  if (mode === "focus") {
+  if (mode === "exam") {
+    state.sessions.push({ date: dayKey(), min: state.settings.exam, subject: $("#focusSubject").value, at: new Date().toTimeString().slice(0, 5) });
+    save();
+    renderSessionLog(true); renderStats(); renderProgress();
+    toast("Time's up! Pens down. ✍️ Check your answers against the book.");
+    confetti(innerWidth / 2, innerHeight / 3, 160);
+    setMode("focus");
+  } else if (mode === "focus") {
     state.sessions.push({ date: dayKey(), min: state.settings.focus, subject: $("#focusSubject").value, at: new Date().toTimeString().slice(0, 5) });
     save();
     renderSessionLog(true); renderStats(); renderProgress();
@@ -585,6 +691,35 @@ $("#modeTabs").addEventListener("click", (e) => { const b = e.target.closest("bu
     save();
     if (mode === k && !running) { remaining = total(); drawTimer(); }
   });
+});
+let pdfUrl = null;
+const wide = () => matchMedia("(min-width: 821px)").matches;
+function setReader(open) {
+  $("#reader").hidden = !open;
+  $(".focus-grid").classList.toggle("reading", open);
+  if (open && A) gsap.fromTo("#reader", { x: 40, opacity: 0 }, { x: 0, opacity: 1, duration: 0.7, ease: "expo.out" });
+  refreshTriggers();
+}
+$("#readerOpen").onclick = () => (wide() ? setReader(true) : $("#pdfFile").click());
+$("#readerClose").onclick = () => setReader(false);
+$("#pdfFile").addEventListener("change", (e) => {
+  const f = e.target.files[0];
+  e.target.value = "";
+  if (!f) return;
+  if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+  pdfUrl = URL.createObjectURL(f);
+  if (!wide()) { window.open(pdfUrl, "_blank"); return; } // phones can't show a PDF inside the page
+  $("#pdfFrame").src = pdfUrl;
+  $("#pdfFrame").hidden = false;
+  $("#readerEmpty").hidden = true;
+  $("#readerTitle").textContent = f.name.replace(/\.pdf$/i, "");
+  setReader(true);
+});
+$("#durGoal").value = state.settings.goal;
+$("#durGoal").addEventListener("change", () => {
+  state.settings.goal = Math.min(720, Math.max(10, +$("#durGoal").value || 120));
+  $("#durGoal").value = state.settings.goal;
+  save(); renderStats();
 });
 $("#focusSubject").addEventListener("change", drawTimer);
 function renderSessionLog(animate) {
@@ -623,11 +758,34 @@ function visibleTasks() {
   const today = dayKey();
   return state.tasks
     .filter((t) => taskFilter === "all" || (taskFilter === "today" && t.due === today) || (taskFilter === "open" && !t.done) || (taskFilter === "done" && t.done))
-    .sort((a, b) => a.done - b.done || (a.due || "9999").localeCompare(b.due || "9999") || b.priority - a.priority);
+    .sort((a, b) => a.done - b.done || (a.order ?? 1e9) - (b.order ?? 1e9) || (a.due || "9999").localeCompare(b.due || "9999"));
 }
+const PRIOS = [[2, "High priority"], [1, "Medium priority"], [0, "Low priority"]];
+let sortables = [];
 function renderTasks(animate) {
   const list = visibleTasks();
-  $("#taskList").innerHTML = list.length ? list.map(taskHTML).join("") : '<li class="list-empty">Nothing here yet — add a task above, or press “Plan” on a chapter.</li>';
+  $("#taskList").innerHTML = list.length || state.tasks.length
+    ? PRIOS.map(([p, label]) => {
+        const items = list.filter((t) => t.priority === p);
+        return `<li class="prio-group p${p}"><div class="pg-head"><i class="prio p${p}"></i>${label}<span>${items.length}</span></div>
+          <ul class="task-drop" data-prio="${p}">${items.map(taskHTML).join("")}</ul></li>`;
+      }).join("")
+    : '<li class="list-empty">Nothing here yet — add a task above, or press “Plan” on a chapter.</li>';
+  sortables.forEach((x) => x.destroy());
+  sortables = window.Sortable ? $$("#taskList .task-drop").map((ul) => new Sortable(ul, {
+    group: "tasks", draggable: ".task", animation: 220, easing: "cubic-bezier(.16,1,.3,1)",
+    filter: ".check, .del", preventOnFilter: false, delay: 180, delayOnTouchOnly: true,
+    ghostClass: "task-ghost", chosenClass: "task-chosen", dragClass: "task-drag",
+    onEnd: (ev) => {
+      const moved = state.tasks.find((t) => t.id === ev.item.dataset.id), to = +ev.to.dataset.prio;
+      const changed = moved && moved.priority !== to;
+      if (moved) moved.priority = to;
+      [ev.from, ev.to].forEach((ul) => $$(".task", ul).forEach((li, i) => { const t = state.tasks.find((x) => x.id === li.dataset.id); if (t) t.order = i; }));
+      save();
+      renderTasks();
+      if (changed) toast(`Moved to ${PRIOS.find(([p]) => p === to)[1]}`);
+    },
+  })) : [];
   if (animate && A) gsap.fromTo("#taskList > li", { y: 20, opacity: 0 }, { y: 0, opacity: 1, stagger: 0.04, duration: 0.6, ease: "expo.out" });
   const done = state.tasks.filter((t) => t.done).length, all = state.tasks.length;
   $("#tpFill").style.transform = `scaleX(${all ? done / all : 0})`;
@@ -693,14 +851,20 @@ function renderDayTabs() {
 function renderBlocks(animate) {
   const now = new Date(), isToday = ttDay === jsDayToIdx(now.getDay()), hm = now.toTimeString().slice(0, 5);
   const list = state.blocks.filter((b) => b.day === ttDay).sort((a, b) => a.start.localeCompare(b.start));
+  const toMin = (t) => +t.slice(0, 2) * 60 + +t.slice(3, 5), nowMin = toMin(hm);
+  let lineDone = !isToday;
+  const nowLine = () => { lineDone = true; return `<li class="now-line"><span>Now · ${hm}</span></li>`; };
   $("#blocks").innerHTML = list.length ? list.map((b) => {
     const s = subj(b.subject), live = isToday && b.start <= hm && hm < b.end;
-    return `<li class="block ${live ? "now" : ""}" data-id="${b.id}" style="--c:${s.color}">
+    const before = !lineDone && !live && b.start > hm ? nowLine() : "";
+    if (live) lineDone = true;
+    const prog = live ? (nowMin - toMin(b.start)) / (toMin(b.end) - toMin(b.start)) : 0;
+    return `${before}<li class="block ${live ? "now" : ""}" data-id="${b.id}" style="--c:${s.color};--p:${prog.toFixed(3)}">
       <div class="block-time">${b.start}<small>to ${b.end}</small></div>
       <div><h4>${esc(b.title)}<span class="live">Now</span></h4><p>${esc(s.name)}</p></div>
       <button class="icon-btn del" aria-label="Delete block"><svg><use href="#i-trash"/></svg></button>
     </li>`;
-  }).join("") : `<li class="list-empty">Nothing planned for ${DAYS[ttDay]} — add a block on the right.</li>`;
+  }).join("") + (lineDone ? "" : nowLine()) : `<li class="list-empty">Nothing planned for ${DAYS[ttDay]} — add a block on the right.</li>`;
   if (animate && A) gsap.fromTo("#blocks > li", { y: 30, opacity: 0, rotate: 1 }, { y: 0, opacity: 1, rotate: 0, stagger: 0.06, duration: 0.8, ease: "expo.out" });
   refreshTriggers();
 }
@@ -901,21 +1065,33 @@ function renderProgress(animate) {
     const s = subj(id);
     return `<li><div class="sb-top"><span>${esc(s.name)}</span><b>${m} min</b></div><div class="sb-track"><i data-w="${m / topMax}" style="--c:${s.color};transform:scaleX(${m / topMax})"></i></div></li>`;
   }).join("") : '<li class="muted">Finish a focus session to see your subjects here.</li>';
-  // heatmap: 15 full weeks, Monday-first columns, ending this week
-  const start = addDays(today, -jsDayToIdx(today.getDay()) - 14 * 7);
+  // GitHub-style grid: 52 full weeks, Monday-first columns, ending this week. A finished task counts as 15 minutes.
+  const start = addDays(today, -jsDayToIdx(today.getDay()) - 51 * 7);
+  const tasksOn = {};
+  state.tasks.forEach((t) => { if (t.doneAt) tasksOn[t.doneAt] = (tasksOn[t.doneAt] || 0) + 1; });
   const cells = [];
-  for (let i = 0; i < 15 * 7; i++) {
-    const d = addDays(start, i), k = dayKey(d), m = minutesOn(k), future = d > today;
-    const lvl = m === 0 ? 0 : m <= 30 ? 1 : m <= 60 ? 2 : m <= 120 ? 3 : 4;
-    cells.push(`<i class="l${lvl} ${k === dayKey() ? "today" : ""}" ${future ? 'style="opacity:.25"' : ""} title="${d.toDateString()} · ${m} min"></i>`);
+  let activeDays = 0;
+  for (let i = 0; i < 52 * 7; i++) {
+    const d = addDays(start, i), k = dayKey(d), m = minutesOn(k), t = tasksOn[k] || 0, score = m + t * 15, future = d > today;
+    if (score && !future) activeDays++;
+    const lvl = score === 0 ? 0 : score <= 30 ? 1 : score <= 60 ? 2 : score <= 120 ? 3 : 4;
+    cells.push(`<i class="l${lvl} ${k === dayKey() ? "today" : ""}" ${future ? 'style="opacity:.25"' : ""} title="${d.toDateString()} · ${m} min${t ? ` · ${t} task${t > 1 ? "s" : ""}` : ""}"></i>`);
   }
   $("#heatmap").innerHTML = cells.join("");
+  $("#heatTotal").textContent = `· ${activeDays} active day${activeDays === 1 ? "" : "s"}`;
+  const hm = $("#heatmap");
+  requestAnimationFrame(() => (hm.scrollLeft = hm.scrollWidth)); // show the latest weeks first on phones
+  $("#sylBars").innerHTML = state.profile ? bookSubjects().map((s) => {
+    const p = bookProgress(s), info = SUBJECT_INFO[s], r = p.total ? p.read / p.total : 0, v = p.total ? p.rev / p.total : 0;
+    return `<li><div class="sb-top"><span>${esc(info.name)}</span><b>${Math.round(r * 100)}%</b></div>
+      <div class="sb-track stacked" title="${p.read} read · ${p.rev} revised of ${p.total}"><i class="rd" data-w="${r}" style="--c:${info.color};transform:scaleX(${r})"></i><i class="rv" data-w="${v}" style="--c:${info.color};transform:scaleX(${v})"></i></div></li>`;
+  }).join("") : "";
   if (animate && A) animateCharts();
 }
 function animateCharts() {
   gsap.fromTo("#barChart .bar-col", { scaleY: 0 }, { scaleY: 1, stagger: 0.06, duration: 1.1, ease: "expo.out" });
-  gsap.fromTo("#subjectBars i", { scaleX: 0 }, { scaleX: (i, el) => +el.dataset.w || 0, stagger: 0.08, duration: 1.2, ease: "expo.out" });
-  gsap.fromTo("#heatmap i", { scale: 0 }, { scale: 1, stagger: { each: 0.004, from: "start" }, duration: 0.5, ease: "back.out(2)" });
+  gsap.fromTo("#subjectBars i, #sylBars i", { scaleX: 0 }, { scaleX: (i, el) => +el.dataset.w || 0, stagger: 0.05, duration: 1.2, ease: "expo.out" });
+  gsap.fromTo("#heatmap i", { scale: 0 }, { scale: 1, stagger: { each: 0.0015, from: "end" }, duration: 0.45, ease: "back.out(2)" });
 }
 function renderExtras() {
   $("#subjectList").innerHTML = state.extras.length
@@ -977,6 +1153,26 @@ $("#sampleBtn").onclick = () => {
   save(); renderAll(); if (A) animateCharts();
   toast("Sample study history added — charts are filled in");
 };
+$("#exportBtn").onclick = () => {
+  const blob = new Blob([JSON.stringify({ app: "study-with-ahmad", version: 1, exportedAt: new Date().toISOString(), data: state }, null, 1)], { type: "application/json" });
+  const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: `study-with-ahmad-backup-${dayKey()}.json` });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  toast("Backup downloaded. Keep it somewhere safe");
+};
+$("#importFile").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  try {
+    const parsed = JSON.parse(await file.text()), data = parsed.data || parsed;
+    if (typeof data !== "object" || !("tasks" in data || "syl" in data || "profile" in data)) throw new Error();
+    if (!confirm("Replace your current planner with this backup?")) return;
+    state = { ...defaults(), ...data };
+    save(); renderAll(true);
+    toast("Backup restored ✓");
+  } catch (err) { toast("That file isn't a Study with Ahmad backup"); }
+});
 $("#clearBtn").onclick = async () => {
   if (!confirm(token ? "Delete all your Study with Ahmad data, in this browser AND in your cloud account? This can't be undone." : "Delete all your Study with Ahmad data in this browser? This can't be undone.")) return;
   state = defaults();
@@ -987,9 +1183,27 @@ $("#clearBtn").onclick = async () => {
 
 // Theme toggle — the new theme grows out of the button as a circle
 function isDark() { return root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches; }
+const themeNow = () => (root.dataset.amoled ? "amoled" : isDark() ? "dark" : "light");
+function applyTheme(t) {
+  root.dataset.theme = t === "light" ? "light" : "dark";
+  if (t === "amoled") root.dataset.amoled = "1"; else delete root.dataset.amoled;
+  try { localStorage.setItem("studynest-theme", t); } catch (e) {}
+  $$("#themeSeg button").forEach((b) => b.classList.toggle("active", b.dataset.themeSet === t));
+  $('meta[name="theme-color"]').content = t === "amoled" ? "#000000" : t === "dark" ? "#111019" : "#5b4bf5";
+}
+function applyAccent(a) {
+  if (a) root.dataset.accent = a; else delete root.dataset.accent;
+  try { a ? localStorage.setItem("swa-accent", a) : localStorage.removeItem("swa-accent"); } catch (e) {}
+  $$("#accentSwatches button").forEach((b) => b.classList.toggle("active", b.dataset.accentSet === (a || "")));
+}
+$$("#themeSeg button").forEach((b) => b.classList.toggle("active", b.dataset.themeSet === themeNow()));
+$$("#accentSwatches button").forEach((b) => b.classList.toggle("active", b.dataset.accentSet === (root.dataset.accent || "")));
+$("#themeSeg").addEventListener("click", (e) => { const b = e.target.closest("[data-theme-set]"); if (b) applyTheme(b.dataset.themeSet); });
+$("#accentSwatches").addEventListener("click", (e) => { const b = e.target.closest("[data-accent-set]"); if (b) { applyAccent(b.dataset.accentSet); toast(`${b.title} theme on`); } });
+// Header button cycles light → dark → AMOLED
 $("#themeBtn").onclick = () => {
-  const next = isDark() ? "light" : "dark";
-  const apply = () => { root.dataset.theme = next; try { localStorage.setItem("studynest-theme", next); } catch (e) {} };
+  const next = { light: "dark", dark: "amoled", amoled: "light" }[themeNow()];
+  const apply = () => applyTheme(next);
   if (!A || !document.startViewTransition) return apply();
   const [x, y] = centerOf($("#themeBtn"));
   const r = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
@@ -1224,6 +1438,66 @@ if (!A) {
   addEventListener("load", () => ScrollTrigger.refresh());
   document.fonts.ready.then(() => { ScrollTrigger.refresh(); movePill($("#modeTabs"), $("#modePill"), $("#modeTabs button.active")); });
 }
+// ---------- Study sounds: rain, brown noise and white noise, generated with Web Audio ----------
+let audio = null, soundNode = null, soundOn = "";
+function noiseBuffer(ctx, kind) {
+  const len = ctx.sampleRate * 4, buf = ctx.createBuffer(2, len, ctx.sampleRate);
+  for (let c = 0; c < 2; c++) {
+    const d = buf.getChannelData(c);
+    let last = 0;
+    for (let i = 0; i < len; i++) {
+      const w = Math.random() * 2 - 1;
+      if (kind === "brown") { last = (last + 0.02 * w) / 1.02; d[i] = last * 3.5; } else d[i] = w;
+    }
+  }
+  return buf;
+}
+function startSound(kind) {
+  audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+  stopSound();
+  const src = audio.createBufferSource();
+  src.buffer = noiseBuffer(audio, kind === "brown" ? "brown" : "white");
+  src.loop = true;
+  const gain = audio.createGain();
+  gain.gain.value = 0;
+  let chain = src;
+  if (kind === "rain") {
+    // rain = bright noise through a band-pass, with a slow wobble in loudness
+    const bp = audio.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 1400; bp.Q.value = 0.6;
+    const lp = audio.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 5000;
+    src.connect(bp); bp.connect(lp); chain = lp;
+    const lfo = audio.createOscillator(), lfoGain = audio.createGain();
+    lfo.frequency.value = 0.15; lfoGain.gain.value = 0.08; lfo.connect(lfoGain); lfoGain.connect(gain.gain); lfo.start();
+    src.onended = () => lfo.stop();
+  }
+  chain.connect(gain); gain.connect(audio.destination);
+  src.start();
+  gain.gain.linearRampToValueAtTime(+$("#soundVol").value * (kind === "white" ? 0.35 : 1), audio.currentTime + 1.2);
+  soundNode = { src, gain, kind };
+  soundOn = kind;
+}
+function stopSound() {
+  if (!soundNode) return;
+  const { src, gain } = soundNode;
+  gain.gain.cancelScheduledValues(audio.currentTime);
+  gain.gain.setValueAtTime(gain.gain.value, audio.currentTime);
+  gain.gain.linearRampToValueAtTime(0, audio.currentTime + 0.6);
+  src.stop(audio.currentTime + 0.65);
+  soundNode = null; soundOn = "";
+}
+$("#sounds").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-sound]");
+  if (!b) return;
+  if (soundOn === b.dataset.sound) stopSound(); else startSound(b.dataset.sound);
+  $$("#sounds [data-sound]").forEach((x) => x.classList.toggle("active", x.dataset.sound === soundOn));
+});
+$("#soundVol").addEventListener("input", () => {
+  if (soundNode) soundNode.gain.gain.setTargetAtTime(+$("#soundVol").value * (soundNode.kind === "white" ? 0.35 : 1), audio.currentTime, 0.1);
+});
+
+// Back online: send anything saved while offline
+addEventListener("online", () => { if (token && isDirty()) { setSync("saving"); pushState(); } });
+
 // Keep the "now" timetable block and greeting fresh
 setInterval(() => { if (state.profile) renderBlocks(); }, 60000);
 
