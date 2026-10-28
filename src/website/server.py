@@ -37,6 +37,15 @@ PUBLIC_FILES = {
     "study.css": ("study.css", "text/css"),
     "study.js": ("study.js", "text/javascript"),
     "syllabus.js": ("syllabus.js", "text/javascript"),
+    "sw.js": ("sw.js", "text/javascript"),
+    "manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
+    "icons/icon-192.png": ("icons/icon-192.png", "image/png"),
+    "icons/icon-512.png": ("icons/icon-512.png", "image/png"),
+    "icons/icon-maskable-512.png": ("icons/icon-maskable-512.png", "image/png"),
+    "icons/apple-touch-icon.png": ("icons/apple-touch-icon.png", "image/png"),
+    "downloads/StudyWithAhmad.exe": ("downloads/StudyWithAhmad.exe", "application/vnd.microsoft.portable-executable"),
+    "downloads/study-with-ahmad.apk": ("downloads/study-with-ahmad.apk", "application/vnd.android.package-archive"),
+    ".well-known/assetlinks.json": (".well-known/assetlinks.json", "application/json"),
 }
 
 
@@ -285,7 +294,7 @@ def put_state(body: StateIn, user: dict = Depends(current_user)):
 # ---------- Pages ----------
 @app.get("/{name:path}")
 def page(name: str):
-    if name not in PUBLIC_FILES:
+    if name not in PUBLIC_FILES or not (PUBLIC / PUBLIC_FILES[name][0]).is_file():
         raise HTTPException(404, "Not found")
     file, media = PUBLIC_FILES[name]
     return FileResponse(PUBLIC / file, media_type=media, headers={"Cache-Control": "no-cache"})

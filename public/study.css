@@ -1015,3 +1015,30 @@ h2 em .wi, .hero h1 em .wi {
   .header .logo-text b { font-size: 20px; }
   .header .logo-text small { font-size: 9px; letter-spacing: 0.16em; }
 }
+
+/* ---------- Get the app ---------- */
+.nav a.nav-app { display: inline-flex; align-items: center; gap: 6px; color: var(--primary); font-weight: 600; }
+.nav a.nav-app svg { width: 16px; height: 16px; }
+.app-flag {
+  display: inline-flex; align-items: center; gap: 10px; margin: 0 10px 14px 0; padding: 5px 12px 5px 5px;
+  border-radius: 50px; background: var(--surface); border: 1px solid var(--line); font-size: 13.5px; font-weight: 500;
+  color: var(--ink); transition: border-color 0.3s, transform 0.3s var(--ease-out, ease);
+}
+.app-flag:hover { border-color: var(--primary); transform: translateY(-2px); }
+.app-flag b { padding: 3px 10px; border-radius: 50px; background: var(--brand, var(--primary)); color: #fff; font-size: 12px; font-weight: 700; }
+.app-flag svg { width: 15px; height: 15px; color: var(--primary); }
+.app-lead { max-width: 440px; }
+.btn-install { margin-bottom: 26px; }
+.app-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+.app-card { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; transition: border-color 0.3s, transform 0.4s var(--ease-out, ease); }
+.app-card:hover { transform: translateY(-4px); }
+.app-card.mine { border-color: var(--primary); box-shadow: 0 0 0 4px var(--primary-soft), var(--shadow); }
+.app-card.mine h3::after { content: "Your device"; margin-left: 10px; padding: 2px 9px; border-radius: 50px; background: var(--primary-soft); color: var(--primary); font-size: 12px; font-weight: 600; vertical-align: middle; }
+.app-card h3 { font-family: var(--display); font-size: 22px; }
+.app-ico { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 14px; background: var(--primary-soft); color: var(--primary); }
+.app-ico svg { width: 24px; height: 24px; }
+.app-steps { margin: 4px 0 0; padding-left: 20px; color: var(--muted); font-size: 14px; line-height: 1.6; }
+.app-steps b { color: var(--ink); font-weight: 600; }
+.app-card .btn { margin-top: 4px; }
+html.standalone .app-flag, html.standalone .nav-app { display: none; }
+@media (max-width: 980px) { .app-grid { grid-template-columns: 1fr; } }

@@ -1120,7 +1120,7 @@ if (!A) {
     .set("#loader", { display: "none" })
     .from(".header-inner > *, .nav a", { y: -30, opacity: 0, stagger: 0.04, duration: 0.9 }, "-=0.6")
     .from(".blob", { scale: 0, duration: 2.2, stagger: 0.15 }, "<")
-    .from("#todayChip", { y: 20, opacity: 0, duration: 0.8 }, "<0.1")
+    .from("#appFlag, #todayChip", { y: 20, opacity: 0, stagger: 0.08, duration: 0.8 }, "<0.1")
     .from(heroWords, { yPercent: 120, rotate: 5, stagger: 0.06, duration: 1.2 }, "<0.1")
     .from("#flipWord", { yPercent: 120, duration: 1.2 }, "<0.25")
     .from(".dot-grid, .spotlight", { opacity: 0, duration: 1.5 }, "<")
@@ -1216,3 +1216,35 @@ if (!A) {
 }
 // Keep the "now" timetable block and greeting fresh
 setInterval(() => { if (state.profile) renderBlocks(); }, 60000);
+
+// ---------- Get the app (installable PWA + Android / Windows downloads) ----------
+const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone || /source=(app|desktop)/.test(location.search);
+if (standalone) document.documentElement.classList.add("standalone");
+if ("serviceWorker" in navigator && CLOUD) addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}));
+
+// Point out the card for the visitor's own device
+const ua = navigator.userAgent;
+const myOs = /android/i.test(ua) ? "android" : /iphone|ipad|ipod/i.test(ua) || (/macintosh/i.test(ua) && navigator.maxTouchPoints > 1) ? "ios" : /windows/i.test(ua) ? "windows" : "";
+if (myOs) $(`.app-card[data-os="${myOs}"]`)?.classList.add("mine");
+
+// Browsers that can install the site directly (Chrome, Edge, Samsung Internet) get a one-tap button
+let installEvent = null;
+addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installEvent = e; $("#installBtn").hidden = standalone; });
+$("#installBtn").onclick = async () => {
+  if (!installEvent) return;
+  installEvent.prompt();
+  const { outcome } = await installEvent.userChoice;
+  if (outcome === "accepted") { $("#installBtn").hidden = true; toast("Study with Ahmad is installing — look for it on your home screen"); }
+  installEvent = null;
+};
+addEventListener("appinstalled", () => { $("#installBtn").hidden = true; });
+
+// If the APK has not been published yet, the Android button installs from the browser instead
+if (CLOUD) fetch($("#apkLink").getAttribute("href"), { method: "HEAD" }).then((r) => {
+  if (r.ok) return;
+  const a = $("#apkLink");
+  a.removeAttribute("download");
+  a.href = "#get-app";
+  a.querySelector("span").textContent = "Install from browser";
+  a.onclick = (e) => { e.preventDefault(); if (installEvent) $("#installBtn").click(); else toast("Open this site in Chrome on your phone, tap ⋮ and choose “Install app”"); };
+}).catch(() => {});
