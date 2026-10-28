@@ -7,6 +7,7 @@ On Vercel, app.py at the project root exposes this `app`, and files in public/ c
 import datetime as dt
 import hashlib
 import hmac
+import http.client
 import json
 import os
 import re
@@ -44,6 +45,8 @@ PUBLIC_FILES = {
     "syllabus.js": ("syllabus.js", "text/javascript"),
     "entrytests.js": ("entrytests.js", "text/javascript"),
     "solver.js": ("solver.js", "text/javascript"),
+    "privacy": ("privacy.html", "text/html"),
+    "privacy.html": ("privacy.html", "text/html"),
     "sw.js": ("sw.js", "text/javascript"),
     "manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
     "icons/icon-192.png": ("icons/icon-192.png", "image/png"),
@@ -122,6 +125,15 @@ CREATE TABLE IF NOT EXISTS ai_usage (
     PRIMARY KEY (user_id, day)
 );
 ALTER TABLE users ADD COLUMN IF NOT EXISTS recovery_hash TEXT;
+CREATE TABLE IF NOT EXISTS feedback (
+    id         BIGSERIAL PRIMARY KEY,
+    user_id    BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    message    TEXT NOT NULL,
+    contact    TEXT NOT NULL DEFAULT '',
+    page       TEXT NOT NULL DEFAULT '',
+    ip         TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 CREATE TABLE IF NOT EXISTS study_rooms (
     user_id  BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     room     TEXT NOT NULL,
@@ -431,7 +443,7 @@ def gemini_request(path: str, payload: dict | None = None, timeout: int = 40) ->
         except Exception:
             pass
         raise GeminiError(err.code, detail) from None
-    except (urllib.error.URLError, TimeoutError) as err:
+    except (OSError, http.client.HTTPException) as err:  # URLError, timeouts, dropped connections
         print(f"Gemini network error on {path.split('?')[0]}: {err!r}")
         raise HTTPException(504, f"Study Buddy couldn't reach Google ({type(err).__name__}). Please try again.") from None
 
@@ -477,13 +489,32 @@ class AskIn(BaseModel):
     subject: str = ""
     language: str = "en"
     history: list[Turn] = []
+    image: str = ""  # optional photo of a textbook question, as a data: URL (the app shrinks it first)
+
+
+# A photo of a question gets a tutor, not an answer key: the method and hints, while the student does the last step.
+PHOTO_RULES = """
+This message includes a PHOTO of a question from the student's book or paper. Act as a tutor, not an answer key:
+1. Say in one line what the question asks and which topic/chapter it is from.
+2. Explain the idea or law it needs, simply.
+3. Show the method step by step, but STOP before the final answer: leave the last calculation or conclusion for the
+   student and tell them to send you their answer so you can check it.
+Only give the full final answer if the student has already tried (they say so, or send their own answer).
+If the photo is unclear, ask them to retake it."""
+IMAGE_RE = re.compile(r"^data:(image/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$")
 
 
 @app.post("/api/ask")
 def ask(body: AskIn, user: dict = Depends(current_user)):
-    question = body.question.strip()
+    question = body.question.strip() or ("Help me understand this question." if body.image else "")
     if not question:
         raise HTTPException(400, "Type a question first")
+    image = None
+    if body.image:
+        m = IMAGE_RE.match(body.image)
+        if not m or len(m.group(2)) > 3_000_000:
+            raise HTTPException(400, "That photo couldn't be read. Try a smaller JPG or PNG.")
+        image = {"inlineData": {"mimeType": m.group(1), "data": m.group(2)}}
     if len(question) > 2000:
         raise HTTPException(400, "That question is too long. Please keep it under 2000 characters.")
     used = use_ai(user["id"])
@@ -492,10 +523,11 @@ def ask(body: AskIn, user: dict = Depends(current_user)):
     contents = [
         {"role": "model" if t.role == "model" else "user", "parts": [{"text": t.text[:3000]}]}
         for t in body.history[-6:]
-    ] + [{"role": "user", "parts": [{"text": question}]}]
+    ] + [{"role": "user", "parts": ([image] if image else []) + [{"text": question}]}]
     payload = {
         "systemInstruction": {"parts": [{"text": BUDDY_PROMPT.format(
-            level=level, subject=f", studying {subject}" if subject else "", language=LANGUAGES.get(body.language, "English"))}]},
+            level=level, subject=f", studying {subject}" if subject else "", language=LANGUAGES.get(body.language, "English"))
+            + (PHOTO_RULES if image else "")}]},
         "contents": contents,
         "generationConfig": {"temperature": 0.4, "maxOutputTokens": 1500},
     }
@@ -613,6 +645,36 @@ def plan(body: PlanIn, user: dict = Depends(current_user)):
     if not out:
         raise HTTPException(502, "The AI couldn't make a plan this time. Please try again.")
     return {"days": out, "tips": [str(t)[:200] for t in data.get("tips", [])[:3]], "left": AI_DAILY_LIMIT - used}
+
+
+# ---------- Feedback ("Koi masla? Batayein"); read it in the Neon SQL editor: SELECT * FROM feedback ORDER BY id DESC ----------
+class FeedbackIn(BaseModel):
+    message: str
+    contact: str = ""
+    page: str = ""
+
+
+@app.post("/api/feedback")
+def feedback(body: FeedbackIn, request: Request, authorization: str = Header(default="")):
+    message = body.message.strip()
+    if len(message) < 3:
+        raise HTTPException(400, "Please write a few words")
+    ip = client_ip(request)
+    user_id = None
+    if authorization.strip():
+        try:
+            user_id = current_user(authorization)["id"]
+        except HTTPException:
+            pass
+    with db() as conn:
+        recent = conn.execute("SELECT count(*) FROM feedback WHERE ip = %s AND created_at > now() - interval '1 hour'", (ip,)).fetchone()[0]
+        if recent >= 5:
+            raise HTTPException(429, "Thanks! We already got several messages from you. Please try again in an hour.")
+        conn.execute(
+            "INSERT INTO feedback (user_id, message, contact, page, ip) VALUES (%s, %s, %s, %s, %s)",
+            (user_id, message[:2000], body.contact.strip()[:120], body.page.strip()[:60], ip),
+        )
+    return {"ok": True}
 
 
 # ---------- Study rooms: who is focusing right now (opt-in, shown only while their timer runs) ----------

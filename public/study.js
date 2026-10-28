@@ -758,6 +758,7 @@ function startTimer() {
   tickId = setInterval(tick, 250);
   drawTimer();
   joinRoom();
+  namazHeadsUp();
 }
 function stopTimer() {
   running = false;
@@ -1133,7 +1134,8 @@ $("#fcGot").onclick = () => {
 $("#fcAgain").onclick = () => {
   const c = state.cards.find((x) => x.id === queue[qi2]);
   if (!c) return;
-  c.known = false; save();
+  c.known = false;
+  addMistake({ kind: "card", ref: c.id, subject: c.subject, text: c.front, answer: c.back });
   queue.push(queue.splice(qi2, 1)[0]); // send to the back of the queue
   if (qi2 >= queue.length) qi2 = 0;
   renderDecks(); showCard(1);
@@ -1259,6 +1261,7 @@ function renderAll(animate) {
   renderEntry();
   loadBoard();
   renderRoomPick();
+  renderMistakes();
   refreshTriggers();
 }
 
@@ -1695,19 +1698,20 @@ function addMsg(who, html) {
   $("#buddyChat").scrollTop = $("#buddyChat").scrollHeight;
   return el;
 }
-async function askBuddy(question) {
+const answerOf = new WeakMap(); // bot message element -> { question, answer }
+async function askBuddy(question, image = "") {
   if (buddyBusy) return;
   if (!CLOUD || !token) { toast("Sign in first to ask Study Buddy (it's free)"); authTab = "login"; openAuth(); return; }
   buddyBusy = true;
   $("#buddySend").disabled = true;
-  addMsg("me", `<p>${esc(question).replace(/\n/g, "<br>")}</p>`);
+  addMsg("me", `${image ? `<img class="msg-photo" src="${image}" alt="Question photo" />` : ""}${question ? `<p>${esc(question).replace(/\n/g, "<br>")}</p>` : ""}`);
   const typing = addMsg("bot typing", "<span class=\"dots\"><i></i><i></i><i></i></span>");
   const s = $("#buddySubject").value;
   try {
     const res = await api("/api/ask", {
       method: "POST",
       body: JSON.stringify({
-        question, language: buddyLang, history: buddyHistory.slice(-6),
+        question, image, language: buddyLang, history: buddyHistory.slice(-6),
         level: state.profile ? `Class ${state.profile.cls} (${groupOf().name})` : "",
         subject: s ? subj(s).name : "",
       }),
@@ -1715,7 +1719,9 @@ async function askBuddy(question) {
     typing.classList.remove("typing");
     $(".msg-body", typing).innerHTML = mdLite(res.answer);
     if (buddyLang === "ur") $(".msg-body", typing).setAttribute("dir", "rtl");
-    buddyHistory.push({ role: "user", text: question }, { role: "model", text: res.answer });
+    buddyHistory.push({ role: "user", text: question || "(sent a photo of a question)" }, { role: "model", text: res.answer });
+    answerOf.set(typing, { question: question || "Photo question", answer: res.answer, subject: s });
+    typing.querySelector(".msg-body").insertAdjacentHTML("beforeend", '<button class="msg-save" data-save type="button">📒 Save to mistake notebook</button>');
     $("#buddyLeft").textContent = `${res.left} question${res.left === 1 ? "" : "s"} left today`;
   } catch (err) {
     typing.classList.remove("typing");
@@ -1729,11 +1735,12 @@ async function askBuddy(question) {
 }
 $("#buddyForm").addEventListener("submit", (e) => {
   e.preventDefault();
-  const q = $("#buddyInput").value.trim();
-  if (!q) return;
+  const q = $("#buddyInput").value.trim(), img = pendingPhoto;
+  if (!q && !img) return;
   $("#buddyInput").value = "";
   $("#buddyInput").style.height = "";
-  askBuddy(q);
+  clearPhoto();
+  askBuddy(q, img);
 });
 $("#buddyInput").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#buddyForm").requestSubmit(); } });
 $("#buddyInput").addEventListener("input", (e) => { e.target.style.height = ""; e.target.style.height = Math.min(e.target.scrollHeight, 160) + "px"; });
@@ -1971,7 +1978,9 @@ loadRoom();
 setInterval(() => { if (document.visibilityState === "visible") loadRoom(); }, 30000);
 
 // ---------- Formula solver ----------
-let solverId = SOLVER[0].id;
+// if solver.js failed to load (e.g. not cached yet offline), hide the solver instead of breaking the rest of the page
+const SOLVER_OK = typeof SOLVER !== "undefined";
+let solverId = SOLVER_OK ? SOLVER[0].id : null;
 function renderSolver() {
   const f = SOLVER.find((x) => x.id === solverId);
   $("#solverPick").innerHTML = ["Physics", "Maths"].map((g) => `<optgroup label="${g}">${SOLVER.filter((x) => x.group === g).map((x) => `<option value="${x.id}" ${x.id === solverId ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</optgroup>`).join("");
@@ -2009,10 +2018,213 @@ $("#solverOut").addEventListener("click", (e) => {
   askBuddy(`Explain this ${f.name} numerical step by step, like a teacher: ${$("#solverOut .steps").innerText.replace(/\n+/g, "; ")}`);
   $("#buddyChat").scrollIntoView({ behavior: "smooth", block: "center" });
 });
-renderSolver();
+if (SOLVER_OK) renderSolver(); else $("#solver").hidden = true;
 
 // Back online: send anything saved while offline
 addEventListener("online", () => { if (token && isDirty()) { setSync("saving"); pushState(); } });
+
+// ---------- Offline banner (load shedding / no internet) ----------
+function showNet() { $("#netBanner").hidden = navigator.onLine; }
+addEventListener("offline", () => { showNet(); toast("Offline: your planner keeps working and saving on this device"); });
+addEventListener("online", () => { showNet(); toast("Back online" + (token ? ", syncing your planner" : "")); });
+showNet();
+
+// ---------- Speak your question (Web Speech API) ----------
+const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recog = null;
+if (!SpeechRec) $("#buddyMic").hidden = true;
+$("#buddyMic").onclick = () => {
+  if (recog) { recog.stop(); return; }
+  recog = new SpeechRec();
+  recog.lang = buddyLang === "en" ? "en-PK" : "ur-PK";
+  recog.interimResults = true;
+  recog.onresult = (e) => { $("#buddyInput").value = [...e.results].map((r) => r[0].transcript).join(""); };
+  recog.onerror = (e) => toast(e.error === "not-allowed" ? "Allow the microphone to speak your question" : "Couldn't hear that, please try again");
+  recog.onend = () => { recog = null; $("#buddyMic").classList.remove("on"); if ($("#buddyInput").value.trim()) { $("#buddyInput").focus(); toast("Check the words, then press Ask"); } };
+  recog.start();
+  $("#buddyMic").classList.add("on");
+  toast(buddyLang === "en" ? "Listening… speak your question" : "Sun raha hoon… apna sawal bolein");
+};
+
+// ---------- Photo of a question (shrunk on the phone before sending) ----------
+let pendingPhoto = "";
+async function shrinkPhoto(file) {
+  const img = await createImageBitmap(file);
+  const scale = Math.min(1, 1280 / Math.max(img.width, img.height));
+  const c = Object.assign(document.createElement("canvas"), { width: Math.round(img.width * scale), height: Math.round(img.height * scale) });
+  c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+  return c.toDataURL("image/jpeg", 0.82);
+}
+function clearPhoto() { pendingPhoto = ""; $("#photoChip").hidden = true; }
+$("#photoFile").addEventListener("change", async (e) => {
+  const f = e.target.files[0];
+  e.target.value = "";
+  if (!f) return;
+  try {
+    pendingPhoto = await shrinkPhoto(f);
+    $("#photoThumb").src = pendingPhoto;
+    $("#photoChip").hidden = false;
+    $("#buddyInput").focus();
+  } catch (err) { toast("That photo couldn't be opened. Try another one"); }
+});
+$("#photoClear").onclick = clearPhoto;
+
+// ---------- Namaz times (AlAdhan, Karachi method, Hanafi Asr) ----------
+const PRAYERS = ["Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"];
+const addMins = (hm, m) => { const t = +hm.slice(0, 2) * 60 + +hm.slice(3, 5) + m; return `${pad(Math.floor(t / 60) % 24)}:${pad(t % 60)}`; };
+if (state.settings.namazCity) $("#namazCity").value = state.settings.namazCity;
+$("#namazBtn").onclick = async () => {
+  const city = $("#namazCity").value, btn = $("#namazBtn");
+  btn.disabled = true;
+  try {
+    const res = await fetch(`https://api.aladhan.com/v1/timingsByCity?city=${encodeURIComponent(city)}&country=Pakistan&method=1&school=1`);
+    const t = (await res.json()).data.timings;
+    state.blocks = state.blocks.filter((b) => !b.namaz);
+    for (let d = 0; d < 7; d++) PRAYERS.forEach((p) => {
+      const start = String(t[p]).slice(0, 5), jummah = d === 4 && p === "Dhuhr";
+      state.blocks.push({ id: uid(), day: d, start, end: addMins(start, jummah ? 45 : 15), subject: "tarjama", title: jummah ? "Jummah namaz" : `${p} namaz`, namaz: true });
+    });
+    state.settings.namazCity = city;
+    save(); renderBlocks(true);
+    toast(`Namaz times for ${city} added to every day. Refresh them once a month`);
+  } catch (err) { toast("Couldn't get namaz times. Check the internet and try again"); }
+  finally { btn.disabled = false; }
+};
+function todaysNamaz() { const d = jsDayToIdx(new Date().getDay()); return state.blocks.filter((b) => b.namaz && b.day === d); }
+function namazHeadsUp() {
+  if (mode !== "focus" && mode !== "exam") return;
+  const now = new Date(), hm = now.toTimeString().slice(0, 5), until = addMins(hm, Math.ceil(remaining / 60));
+  const p = todaysNamaz().find((b) => b.start > hm && b.start <= until);
+  if (p) toast(`🕌 ${p.title.replace(" namaz", "")} is at ${p.start}, during this session. Take a break then`);
+}
+let namazToldAt = "";
+setInterval(() => {
+  const hm = new Date().toTimeString().slice(0, 5), p = todaysNamaz().find((b) => b.start === hm);
+  if (!p || namazToldAt === hm) return;
+  namazToldAt = hm;
+  toast(`🕌 ${p.title.replace(" namaz", "")} ka waqt. ${running ? "Pause the timer and take a break" : "Time for namaz"}`);
+  chime();
+}, 20000);
+
+// ---------- Mistake notebook + weak chapters ----------
+function mistakes() { return (state.mistakes ||= []); }
+function addMistake(m) {
+  const list = mistakes(), old = m.ref && list.find((x) => x.ref === m.ref);
+  if (old) { old.count++; old.at = dayKey(); } else list.unshift({ id: uid(), count: 1, at: dayKey(), ...m });
+  save(); renderMistakes();
+}
+function weakChapters() {
+  const today = new Date(), out = [];
+  if (!state.profile) return out;
+  bookSubjects().forEach((s) => {
+    const b = bookOf(s);
+    b.chapters.forEach((name, i) => {
+      const n = b.start + i, pr = state.syl[sylKey(s, n)];
+      const last = pr && pr.r && (pr.vAt || pr.rAt);
+      if (!last) return;
+      const days = Math.round((today - new Date(last + "T00:00")) / 864e5);
+      if (days >= 14) out.push({ s, n, name, days, why: pr.v ? `last revised ${days} days ago` : `read ${days} days ago, never revised` });
+    });
+  });
+  return out.sort((a, b) => b.days - a.days).slice(0, 3);
+}
+function renderMistakes() {
+  const list = mistakes(), weak = weakChapters();
+  const misses = {};
+  list.filter((m) => m.kind === "card").forEach((m) => (misses[m.subject] = (misses[m.subject] || 0) + m.count));
+  const worst = Object.entries(misses).sort((a, b) => b[1] - a[1])[0];
+  $("#weakBox").innerHTML = weak.length || worst
+    ? `<b>Weak spots</b><ul>${weak.map((w) => `<li style="--c:${SUBJECT_INFO[w.s].color}"><span class="dot"></span>${esc(SUBJECT_INFO[w.s].name)} Ch ${w.n}: ${esc(w.name)} <small>${w.why}</small></li>`).join("")}${worst && worst[1] >= 3 ? `<li style="--c:${subj(worst[0]).color}"><span class="dot"></span>${esc(subj(worst[0]).name)} flashcards <small>missed ${worst[1]} times</small></li>` : ""}</ul>`
+    : "";
+  $("#mistakeCount").textContent = `${list.length} saved`;
+  $("#mistakeList").innerHTML = list.length
+    ? list.slice(0, 50).map((m) => `<li data-id="${m.id}" style="--c:${subj(m.subject).color}"><details><summary><span class="dot"></span><span>${esc(m.text)}</span>${m.count > 1 ? `<em>×${m.count}</em>` : ""}</summary><div class="m-answer">${m.kind === "buddy" ? mdLite(m.answer) : `<p>${esc(m.answer)}</p>`}</div></details><button class="link-btn" data-done>Got it ✓</button></li>`).join("")
+    : '<li class="muted">Nothing here yet. Press "Again" on a flashcard you missed, or save a Study Buddy answer.</li>';
+  $("#mistakePractice").hidden = !list.length;
+}
+$("#mistakeList").addEventListener("click", (e) => {
+  const li = e.target.closest("li[data-id]");
+  if (!li || !e.target.closest("[data-done]")) return;
+  state.mistakes = mistakes().filter((m) => m.id !== li.dataset.id);
+  save(); renderMistakes();
+  toast("Removed from your mistake notebook");
+});
+$("#buddyChat").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-save]");
+  if (!b) return;
+  const a = answerOf.get(b.closest(".msg"));
+  if (!a) return;
+  addMistake({ kind: "buddy", subject: a.subject || "", text: a.question.slice(0, 200), answer: a.answer.slice(0, 1500) });
+  b.disabled = true; b.textContent = "📒 Saved";
+});
+$("#mistakePractice").onclick = () => {
+  const items = mistakes().slice(0, 8).map((m, i) => `${i + 1}) ${m.text}`).join("\n");
+  $('a[href="#buddy"]').click();
+  askBuddy(`I keep getting these wrong. Quiz me on them one at a time, wait for my answer, then explain:\n${items}`);
+};
+renderMistakes();
+
+// ---------- Weekly report (opens by itself on Sundays) ----------
+function weekStats(back) {
+  const mon = addDays(new Date(), -jsDayToIdx(new Date().getDay()) - 7 * back), keys = new Set(Array.from({ length: 7 }, (_, i) => dayKey(addDays(mon, i))));
+  const ses = state.sessions.filter((x) => keys.has(x.date) && !x.sample);
+  const syl = Object.values(state.syl);
+  return {
+    from: mon, mins: ses.reduce((a, x) => a + x.min, 0), sessions: ses.length,
+    tasks: state.tasks.filter((t) => t.doneAt && keys.has(t.doneAt)).length,
+    read: syl.filter((p) => p.rAt && keys.has(p.rAt)).length, revised: syl.filter((p) => p.vAt && keys.has(p.vAt)).length,
+  };
+}
+function reportText() {
+  const w = weekStats(0), last = weekStats(1), left = state.tasks.filter((t) => !t.done).length, ne = nextExam(), weak = weakChapters();
+  const range = `${w.from.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} – ${addDays(w.from, 6).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}`;
+  const lines = [
+    `📚 Study with Ahmad · weekly report (${range})${username ? ` · ${username}` : ""}`,
+    `⏱ Focused ${fmtMins(w.mins)} in ${w.sessions} sessions (last week ${fmtMins(last.mins)})`,
+    `✅ ${w.tasks} tasks done, ${left} still to do`,
+    `📖 ${w.read} chapters read, ${w.revised} revised`,
+    ne ? `🎯 Next exam: ${ne.title} in ${Math.max(0, Math.ceil((new Date(ne.date) - Date.now()) / 864e5))} days` : "",
+    weak.length ? `⚠ Revise next: ${weak.map((x) => `${SUBJECT_INFO[x.s].name} Ch ${x.n}`).join(", ")}` : "",
+    `Next week: ${reviewsDue().length} revisions due and ${state.tasks.filter((t) => !t.done && t.due && t.due <= dayKey(addDays(new Date(), 7))).length} tasks to finish.`,
+  ].filter(Boolean);
+  return { range, lines, w, last };
+}
+function openReport() {
+  const r = reportText(), up = r.w.mins - r.last.mins;
+  $("#reportRange").textContent = r.range;
+  $("#reportBody").innerHTML = `<div class="report-stats">
+      <div><b>${fmtMins(r.w.mins)}</b><span>focused ${up >= 0 ? `<em class="up">▲ ${fmtMins(up)}</em>` : `<em class="down">▼ ${fmtMins(-up)}</em>`}</span></div>
+      <div><b>${r.w.tasks}</b><span>tasks done</span></div>
+      <div><b>${r.w.read}</b><span>chapters read</span></div>
+      <div><b>${r.w.revised}</b><span>revised</span></div>
+    </div><ul class="report-lines">${r.lines.slice(4).map((l) => `<li>${esc(l)}</li>`).join("")}</ul>`;
+  $("#reportShare").href = `https://wa.me/?text=${encodeURIComponent(r.lines.join("\n"))}`;
+  openDlg("#reportDlg");
+}
+function openDlg(sel) { $(sel).classList.add("open"); $(sel).setAttribute("aria-hidden", "false"); if (lenis) lenis.stop(); }
+function closeDlg(el) { el.classList.remove("open"); el.setAttribute("aria-hidden", "true"); if (lenis) lenis.start(); }
+$$("#reportDlg, #feedbackDlg").forEach((d) => d.addEventListener("click", (e) => { if (e.target.closest("[data-close]")) closeDlg(d); }));
+$("#reportBtn").onclick = openReport;
+$("#reportCopy").onclick = async () => { try { await navigator.clipboard.writeText(reportText().lines.join("\n")); toast("Report copied"); } catch (e) { toast("Couldn't copy, use Send on WhatsApp instead"); } };
+setTimeout(() => {
+  if (new Date().getDay() !== 0 || !state.profile || !state.sessions.length) return;
+  try { if (localStorage.getItem("swa-report") === dayKey()) return; localStorage.setItem("swa-report", dayKey()); } catch (e) { return; }
+  if (!document.querySelector(".setup.open")) openReport();
+}, 6000);
+
+// ---------- Feedback ----------
+$("#feedbackBtn").onclick = () => { $("#fbError").textContent = ""; openDlg("#feedbackDlg"); setTimeout(() => $("#fbText").focus(), 300); };
+$("#feedbackForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  $("#fbSend").disabled = true;
+  try {
+    await api("/api/feedback", { method: "POST", body: JSON.stringify({ message: $("#fbText").value, contact: $("#fbContact").value, page: root.classList.contains("tabbed") ? "phone" : "desktop" }) });
+    $("#fbText").value = $("#fbContact").value = "";
+    closeDlg($("#feedbackDlg"));
+    toast("Shukriya! Your message has been sent");
+  } catch (err) { $("#fbError").textContent = err.message; }
+  finally { $("#fbSend").disabled = false; }
+});
 
 // Keep the "now" timetable block and greeting fresh
 setInterval(() => { if (state.profile) renderBlocks(); }, 60000);

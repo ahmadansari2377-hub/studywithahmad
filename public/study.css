@@ -1441,3 +1441,58 @@ h2.ur .w { overflow: visible; padding-bottom: 0.15em; } /* Nastaliq letters hang
 .steps { display: flex; flex-direction: column; gap: 6px; padding-left: 20px; font-size: 14.5px; }
 .steps b { color: var(--ink); }
 .solver-answer { padding: 10px 16px; border-radius: 12px; border: 1.5px solid var(--mint); background: color-mix(in srgb, var(--mint) 12%, var(--surface)); font-size: 16px; }
+
+/* ---------- Offline banner ---------- */
+.net-banner { position: fixed; left: 50%; top: 76px; z-index: 90; transform: translateX(-50%); max-width: calc(100% - 32px); padding: 10px 16px; border-radius: 14px; background: var(--sun); color: #1b1a2e; font-size: 13.5px; font-weight: 600; box-shadow: var(--shadow); text-align: center; }
+.net-banner[hidden] { display: none; }
+
+/* ---------- Buddy: mic + photo ---------- */
+.buddy-in { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.buddy-in textarea { width: 100%; }
+.buddy-tool { flex-shrink: 0; width: 44px; height: 48px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface); cursor: pointer; }
+.buddy-tool[hidden] { display: none; }
+#buddyMic.on { background: var(--coral); border-color: var(--coral); color: #fff; animation: blink 1.2s infinite; }
+.photo-chip { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 12px; background: var(--tint); font-size: 13px; }
+.photo-chip[hidden] { display: none; }
+.photo-chip img { width: 44px; height: 44px; object-fit: cover; border-radius: 8px; }
+.photo-chip span { flex: 1; color: var(--muted); }
+.photo-chip .x, #photoClear .x { transform: rotate(45deg); }
+.msg-photo { display: block; max-width: 220px; max-height: 220px; border-radius: 10px; margin-bottom: 6px; }
+.msg-save { display: inline-flex; margin-top: 10px; padding: 4px 10px; border-radius: 50px; border: 1px solid var(--line); background: var(--surface); font-size: 12px; color: var(--muted); }
+.msg-save:hover { color: var(--ink); border-color: var(--primary); }
+
+/* ---------- Namaz ---------- */
+.namaz-row { display: flex; gap: 8px; margin-top: 6px; }
+.namaz-row .input { flex: 1; min-width: 0; }
+
+/* ---------- Mistake notebook ---------- */
+.mistakes { margin-top: 22px; display: flex; flex-direction: column; gap: 12px; }
+.weak:not(:empty) { padding: 12px 14px; border-radius: 14px; background: color-mix(in srgb, var(--coral) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--coral) 30%, var(--line)); font-size: 14px; }
+.weak ul { list-style: none; display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.weak li { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.weak small { color: var(--muted); }
+.weak .dot, .mistake-list .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c); flex-shrink: 0; }
+.mistake-list { list-style: none; display: flex; flex-direction: column; gap: 6px; max-height: 420px; overflow-y: auto; }
+.mistake-list > li { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-radius: 12px; background: var(--tint); font-size: 14px; }
+.mistake-list > li.muted { background: none; padding: 0; }
+.mistake-list details { flex: 1; min-width: 0; }
+.mistake-list summary { display: flex; align-items: baseline; gap: 8px; cursor: pointer; list-style: none; }
+.mistake-list summary::-webkit-details-marker { display: none; }
+.mistake-list summary em { font-style: normal; font-size: 12px; font-weight: 700; color: var(--coral); }
+.m-answer { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13.5px; }
+.m-answer p + p, .m-answer ul, .m-answer ol { margin-top: 6px; }
+.mistakes > .btn { align-self: flex-start; }
+
+/* ---------- Weekly report + feedback dialogs ---------- */
+.report-btn { align-self: center; }
+.report-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
+.report-stats div { padding: 12px; border-radius: 14px; background: var(--tint); }
+.report-stats b { display: block; font-family: var(--display); font-size: 24px; line-height: 1.1; }
+.report-stats span { font-size: 12px; color: var(--muted); }
+.report-stats em { font-style: normal; font-weight: 700; }
+.report-stats .up { color: var(--mint); }
+.report-stats .down { color: var(--coral); }
+.report-lines { display: flex; flex-direction: column; gap: 6px; padding-left: 18px; margin-bottom: 18px; font-size: 14.5px; }
+.fb-form { display: flex; flex-direction: column; gap: 10px; }
+.fb-form textarea { min-height: 110px; padding: 12px 14px; resize: vertical; }
+@media (max-width: 600px) { .report-stats { grid-template-columns: 1fr 1fr; } .buddy-tool { width: 40px; height: 44px; } }

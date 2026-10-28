@@ -26,6 +26,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Inter:wght@400;500;600&family=Noto+Nastaliq+Urdu:wght@500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lenis@1.1.13/dist/lenis.css" />
   <link rel="stylesheet" href="study.css" />
+  <!-- Vercel Web Analytics: anonymous page counts, no cookies (switch it on in the Vercel dashboard) -->
+  <script defer src="/_vercel/insights/script.js"></script>
 </head>
 <body>
 
@@ -58,6 +60,8 @@
     <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
     <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></symbol>
     <symbol id="i-send" viewBox="0 0 24 24"><path d="M4 12l16-8-6 16-2.5-6.5z"/><path d="M11.5 13.5L20 4"/></symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
     <symbol id="i-phone" viewBox="0 0 24 24"><rect x="6" y="2.5" width="12" height="19" rx="3"/><path d="M11 18.5h2"/></symbol>
     <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="13" rx="2.5"/><path d="M8 21h8M12 17v4"/></symbol>
     <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></symbol>
@@ -312,6 +316,11 @@
               <label>To <input class="input" type="time" id="blockEnd" value="17:00" required /></label>
             </div>
             <button class="btn btn-primary" type="submit"><svg><use href="#i-plus"/></svg>Add to timetable</button>
+            <div class="namaz-row">
+              <select class="input" id="namazCity" aria-label="Your city"><option>Lahore</option><option>Karachi</option><option>Islamabad</option><option>Rawalpindi</option><option>Faisalabad</option><option>Multan</option><option>Gujranwala</option><option>Sialkot</option><option>Bahawalpur</option><option>Sargodha</option><option>Sahiwal</option><option>Sheikhupura</option><option>Rahim Yar Khan</option><option>Dera Ghazi Khan</option><option>Jhang</option><option>Gujrat</option><option>Kasur</option><option>Okara</option><option>Peshawar</option><option>Quetta</option><option>Hyderabad</option><option>Sukkur</option><option>Abbottabad</option><option>Mardan</option><option>Muzaffarabad</option></select>
+              <button type="button" class="btn btn-soft" id="namazBtn">🕌 Add namaz times</button>
+            </div>
+            <p class="muted small">Adds the 5 prayers for every day of the week (Hanafi Asr), and the timer reminds you when it's time.</p>
           </form>
         </div>
       </div>
@@ -399,6 +408,13 @@
             <p class="muted small" id="deckInfo"></p>
           </form>
         </div>
+        <div class="panel mistakes reveal" id="mistakes">
+          <div class="panel-head"><h3>📒 Mistake notebook</h3><span class="muted small" id="mistakeCount"></span></div>
+          <p class="muted small">Cards you mark <b>Again</b> and Study Buddy answers you save land here. Before an exam, read just this page.</p>
+          <div class="weak" id="weakBox"></div>
+          <ul class="mistake-list" id="mistakeList"></ul>
+          <button class="btn btn-soft" id="mistakePractice" type="button"><svg><use href="#i-spark"/></svg>Quiz me on my mistakes</button>
+        </div>
       </div>
     </section>
 
@@ -407,6 +423,7 @@
       <div class="container">
         <div class="section-head">
           <div><p class="kicker">07 · Progress</p><h2 class="split">Watch the <em>hours add up.</em></h2></div>
+          <button class="btn btn-soft report-btn reveal" id="reportBtn" type="button">📊 Weekly report</button>
           <div class="totals reveal">
             <div><b id="totHours">0</b><span>hours this week</span></div>
             <div><b id="totSessions">0</b><span>sessions this week</span></div>
@@ -483,7 +500,12 @@
             <button data-q="What is the difference between ">⚖️ Difference between…</button>
           </div>
           <form class="buddy-form" id="buddyForm" autocomplete="off">
-            <textarea id="buddyInput" class="input" rows="1" maxlength="2000" placeholder="Ask anything from your syllabus, e.g. What is Newton's second law?"></textarea>
+            <div class="buddy-in">
+              <div class="photo-chip" id="photoChip" hidden><img id="photoThumb" alt="Question photo" /><span>Photo added. Ask about it, or just press Ask.</span><button type="button" class="icon-btn" id="photoClear" aria-label="Remove photo"><svg class="x"><use href="#i-plus"/></svg></button></div>
+              <textarea id="buddyInput" class="input" rows="1" maxlength="2000" placeholder="Ask anything from your syllabus, e.g. What is Newton's second law?"></textarea>
+            </div>
+            <label class="icon-btn buddy-tool" id="buddyPhoto" title="Photo of a question"><svg><use href="#i-camera"/></svg><input type="file" accept="image/*" capture="environment" id="photoFile" hidden /></label>
+            <button type="button" class="icon-btn buddy-tool" id="buddyMic" title="Speak your question (Urdu or English)" aria-label="Speak your question"><svg><use href="#i-mic"/></svg></button>
             <button class="btn btn-primary" type="submit" id="buddySend" aria-label="Ask"><svg><use href="#i-send"/></svg><span>Ask</span></button>
           </form>
           <p class="muted small buddy-note">Study Buddy uses Google Gemini and can make mistakes. Check important answers against your textbook. Sign in to use it: 40 free questions a day.</p>
@@ -507,7 +529,7 @@
       <div class="container">
         <div class="section-head">
           <div><p class="kicker">09 · Get the app</p><h2 class="split">Take it <em>everywhere.</em></h2></div>
-          <p class="muted app-lead reveal">Install Study with Ahmad on your phone or PC. It opens in its own window with its own icon, and your planner stays in sync when you sign in.</p>
+          <p class="muted app-lead reveal">Install Study with Ahmad on your phone or PC. It opens in its own window with its own icon, and your planner stays in sync when you sign in. <b>Load shedding or no internet? It keeps working offline</b> and syncs when the net is back.</p>
         </div>
         <button class="btn btn-primary btn-install" id="installBtn" hidden><svg><use href="#i-download"/></svg><span>Install app on this device</span></button>
         <div class="app-grid">
@@ -564,6 +586,7 @@
     <a href="#flashcards"><svg><use href="#i-cards"/></svg>Flashcards</a>
     <a href="#progress-sec"><svg><use href="#i-chart"/></svg>Progress</a>
     <a href="#get-app"><svg><use href="#i-download"/></svg>Get the app</a>
+    <a href="#mistakes"><svg><use href="#i-cards"/></svg>Mistake notebook</a>
   </div>
 
   <!-- Floating dock -->
@@ -605,6 +628,8 @@
         <label class="link-btn" for="importFile">Import backup</label><input type="file" accept="application/json,.json" id="importFile" hidden />
         <button class="link-btn" id="sampleBtn">Load sample data</button>
         <button class="link-btn danger" id="clearBtn">Clear everything</button>
+        <button class="link-btn" id="feedbackBtn">Koi masla? Batayein</button>
+        <a class="link-btn" href="/privacy.html">Privacy</a>
       </div>
     </div>
   </footer>
@@ -701,6 +726,37 @@
         </div>
       </div>
       <p class="muted small auth-offline" id="authOffline" hidden>Cloud saving needs the Study with Ahmad server. Start it with <b>uv run website</b>, then open <b>http://127.0.0.1:8000</b>.</p>
+    </div>
+  </div>
+
+  <div class="net-banner" id="netBanner" hidden>📴 You're offline. Everything still works and is saved on this device; it will sync when the internet is back.</div>
+
+  <div class="setup" id="reportDlg" aria-hidden="true">
+    <div class="setup-bg" data-close></div>
+    <div class="setup-card report-card" role="dialog" aria-labelledby="reportTitle">
+      <button class="icon-btn auth-close" data-close aria-label="Close"><svg><use href="#i-plus"/></svg></button>
+      <p class="kicker" id="reportRange"></p>
+      <h2 id="reportTitle">Your week</h2>
+      <div class="report-body" id="reportBody"></div>
+      <div class="auth-actions">
+        <a class="btn btn-primary" id="reportShare" target="_blank" rel="noopener">Send on WhatsApp</a>
+        <button class="btn btn-soft" id="reportCopy" type="button">Copy</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="setup" id="feedbackDlg" aria-hidden="true">
+    <div class="setup-bg" data-close></div>
+    <div class="setup-card" role="dialog" aria-labelledby="fbTitle">
+      <button class="icon-btn auth-close" data-close aria-label="Close"><svg><use href="#i-plus"/></svg></button>
+      <p class="kicker">Feedback</p>
+      <h2 id="fbTitle">Koi masla? Batayein.</h2>
+      <form id="feedbackForm" class="fb-form">
+        <textarea class="input" id="fbText" rows="4" maxlength="2000" required placeholder="What went wrong, or what should we add? Urdu or English, both are fine."></textarea>
+        <input class="input" id="fbContact" maxlength="120" placeholder="Phone or email if you want a reply (optional)" />
+        <p class="auth-error" id="fbError"></p>
+        <button class="btn btn-primary btn-wide" type="submit" id="fbSend">Send</button>
+      </form>
     </div>
   </div>
 
