@@ -276,6 +276,7 @@ function setAuthTab(t) {
   movePill($("#authTabs"), $("#authPill"), btn);
   $("#authSubmit").textContent = t === "login" ? "Sign in" : "Create my account";
   $("#authPass").autocomplete = t === "login" ? "current-password" : "new-password";
+  $("#authWarn").hidden = t === "login";
   $("#authError").textContent = "";
 }
 $("#accountBtn").onclick = openAuth;
@@ -1623,8 +1624,3 @@ if (CLOUD) fetch($("#apkLink").getAttribute("href"), { method: "HEAD" }).then((r
   a.querySelector("span").textContent = "Install from browser";
   a.onclick = (e) => { e.preventDefault(); if (installEvent) $("#installBtn").click(); else toast("Open this site in Chrome on your phone, tap ⋮ and choose “Install app”"); };
 }).catch(() => {});
-
-// ---------- No pinch zoom (Safari ignores user-scalable=no, so block its gestures too) ----------
-// Double-tap zoom is already off via `touch-action: manipulation` in study.css.
-["gesturestart", "gesturechange"].forEach((t) => document.addEventListener(t, (e) => e.preventDefault(), { passive: false }));
-document.addEventListener("touchmove", (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });

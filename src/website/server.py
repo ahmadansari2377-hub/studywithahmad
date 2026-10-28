@@ -18,6 +18,7 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse
+import psycopg
 from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 from pydantic import BaseModel
@@ -109,6 +110,7 @@ CREATE TABLE IF NOT EXISTS login_failures (
     attempted_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS login_failures_user_idx ON login_failures (username, attempted_at);
+CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower_idx ON users (lower(username));
 CREATE INDEX IF NOT EXISTS login_failures_ip_idx ON login_failures (ip, attempted_at);
 CREATE TABLE IF NOT EXISTS ai_usage (
     user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -219,10 +221,14 @@ def signup(body: Credentials):
         exists = conn.execute("SELECT 1 FROM users WHERE lower(username) = lower(%s)", (username,)).fetchone()
         if exists:
             raise HTTPException(409, "That username is taken — try another")
-        user_id = conn.execute(
-            "INSERT INTO users (username, password_hash) VALUES (%s, %s) RETURNING id",
-            (username, hash_password(body.password)),
-        ).fetchone()[0]
+        try:
+            user_id = conn.execute(
+                "INSERT INTO users (username, password_hash) VALUES (%s, %s) RETURNING id",
+                (username, hash_password(body.password)),
+            ).fetchone()[0]
+        except psycopg.errors.UniqueViolation:
+            # "Ali" and "ali" signing up at the same moment: the lower(username) index lets only one through
+            raise HTTPException(409, "That username is taken — try another") from None
         token = new_token(conn, user_id)
     return {"token": token, "username": username}
 
@@ -247,10 +253,14 @@ def login(body: Credentials, request: Request):
     username, ip = body.username.strip().lower(), client_ip(request)
     with db() as conn:
         conn.execute("DELETE FROM login_failures WHERE attempted_at < now() - interval '1 day'")
+        conn.execute("DELETE FROM auth_tokens WHERE created_at < now() - make_interval(days => %s)", (TOKEN_DAYS,))
+        # Counted per username AND connection, so someone else typing your username can't lock you out;
+        # the per-connection limit below still stops password guessing.
         user_fails, user_wait = conn.execute(
             """SELECT count(*), EXTRACT(EPOCH FROM min(attempted_at) + make_interval(mins => %s) - now())
-               FROM login_failures WHERE username = %s AND attempted_at > now() - make_interval(mins => %s)""",
-            (LOCK_MINUTES, username, LOCK_MINUTES),
+               FROM login_failures WHERE username = %s AND ip = %s
+               AND attempted_at > now() - make_interval(mins => %s)""",
+            (LOCK_MINUTES, username, ip, LOCK_MINUTES),
         ).fetchone()
         ip_fails, ip_wait = conn.execute(
             """SELECT count(*), EXTRACT(EPOCH FROM min(attempted_at) + make_interval(mins => %s) - now())
@@ -269,7 +279,7 @@ def login(body: Credentials, request: Request):
             conn.commit()  # keep the failure even though we raise below
             left = MAX_USER_FAILS - (user_fails + 1)
             if left <= 0:
-                raise HTTPException(429, f"Wrong password 3 times — this account is locked for {LOCK_MINUTES} minutes.")
+                raise HTTPException(429, f"Wrong password 3 times — signing in to this account from here is paused for {LOCK_MINUTES} minutes.")
             raise HTTPException(401, f"Wrong username or password — {left} {'try' if left == 1 else 'tries'} left.")
 
         conn.execute("DELETE FROM login_failures WHERE username = %s", (username,))

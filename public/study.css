@@ -1277,3 +1277,5 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: man
   .buddy-form .btn span { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { .dots i { animation: none; } }
+.auth-warn { margin: 2px 0 0; padding: 10px 12px; border-radius: 12px; background: color-mix(in srgb, var(--sun) 16%, var(--surface)); font-size: 13px; line-height: 1.5; }
+.auth-warn[hidden] { display: none; }

@@ -1,7 +1,7 @@
 [project]
-name = "website"
+name = "study-with-ahmad"
 version = "0.1.0"
-description = "Add your description here"
+description = "Study with Ahmad: a free study planner for Punjab Board Matric and Inter students (FastAPI + Neon Postgres)"
 readme = "README.md"
 authors = [
     { name = "Ahmad Ansari", email = "ahmadansari2377@gmail.com" }
@@ -20,3 +20,7 @@ website = "website:main"
 [build-system]
 requires = ["uv_build>=0.12.23,<0.13.0"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+# the package folder is src/website (also the `uv run website` command)
+module-name = "website"
