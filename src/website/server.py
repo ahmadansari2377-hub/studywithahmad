@@ -408,14 +408,14 @@ def gemini_key() -> str:
     return key.strip()
 
 
-def gemini_request(path: str, payload: dict | None = None) -> dict:
+def gemini_request(path: str, payload: dict | None = None, timeout: int = 40) -> dict:
     req = urllib.request.Request(
         f"{GEMINI_BASE}/{path}",
         data=json.dumps(payload).encode() if payload is not None else None,
         headers={"Content-Type": "application/json", "x-goog-api-key": gemini_key()},
     )
     try:
-        with urllib.request.urlopen(req, timeout=40) as res:
+        with urllib.request.urlopen(req, timeout=timeout) as res:
             return json.loads(res.read())
     except urllib.error.HTTPError as err:
         detail = ""
@@ -511,9 +511,9 @@ def use_ai(user_id: int) -> int:
     return used
 
 
-def generate_counted(payload: dict, user_id: int) -> dict:
+def generate_counted(payload: dict, user_id: int, timeout: int = 40) -> dict:
     try:
-        return generate(payload)
+        return generate(payload, timeout)
     except HTTPException:
         with db() as conn:  # a failed answer doesn't count against today's limit
             conn.execute("UPDATE ai_usage SET count = count - 1 WHERE user_id = %s AND day = CURRENT_DATE", (user_id,))
@@ -570,7 +570,7 @@ def plan(body: PlanIn, user: dict = Depends(current_user)):
         raise HTTPException(400, "The exam date should be in the future")
     if not body.chapters:
         raise HTTPException(400, "Every chapter is already revised. Nothing left to plan!")
-    days = min((exam_day - today).days, 21)  # three weeks at a time keeps the answer quick; plan again later
+    days = min((exam_day - today).days, 14)  # two weeks at a time keeps the answer quick; plan again later
     hours = max(0.5, min(body.hours, 12))
     clean = lambda s, n: re.sub(r"[^\w .,:()'&/-]", "", s)[:n]
     chapters = "\n".join(f"{clean(c.subject, 20)} | {c.n} | {clean(c.name, 70)} | {clean(c.status, 10)}" for c in body.chapters[:150])
@@ -582,7 +582,7 @@ def plan(body: PlanIn, user: dict = Depends(current_user)):
             days=days, per_day=max(2, min(5, round(hours * 60 / 45))), language=LANGUAGES.get(body.language, "English"))}]}],
         "generationConfig": {"temperature": 0.3, "maxOutputTokens": 8000, "responseMimeType": "application/json"},
     }
-    raw = answer_text(generate_counted(payload, user["id"]))
+    raw = answer_text(generate_counted(payload, user["id"], timeout=110))  # a whole plan takes Gemini longer than a chat answer
     try:
         data = json.loads(raw[raw.index("{"):raw.rindex("}") + 1])
     except ValueError:
@@ -644,13 +644,13 @@ def leaderboard(cls: str = "", city: str = "", authorization: str = Header(defau
     return {"week_of": monday, "top": board[:20], "me": next((b for b in board if b["me"]), None)}
 
 
-def generate(payload: dict) -> dict:
+def generate(payload: dict, timeout: int = 40) -> dict:
     """Try each model in turn: when Google says one is overloaded (500/503) or out of quota (429), the next usually works."""
     global _gemini_models
     busy = None
     for model in gemini_models():
         try:
-            return gemini_request(f"models/{model}:generateContent", payload)
+            return gemini_request(f"models/{model}:generateContent", payload, timeout)
         except GeminiError as err:
             # Vercel's runtime logs show this; the key is never part of Google's message
             print(f"Gemini error {err.status} on {model}: {err}")
