@@ -315,7 +315,7 @@ def put_state(body: StateIn, user: dict = Depends(current_user)):
 # ---------- AI Study Buddy (Google Gemini) ----------
 AI_DAILY_LIMIT = 40        # questions per student per day, so one key can serve many students
 GEMINI_BASE = os.environ.get("GEMINI_API_BASE", "https://generativelanguage.googleapis.com/v1beta")
-_gemini_model: str | None = None
+_gemini_models: list[str] = []
 
 BUDDY_PROMPT = """You are "Study Buddy", a friendly tutor inside Study with Ahmad, a study planner for Punjab Board
 (PTB / BISE) Matric and Intermediate students in Pakistan. The student is in {level}{subject}.
@@ -365,24 +365,28 @@ class GeminiError(Exception):
         self.status = status
 
 
-def gemini_model() -> str:
-    """GEMINI_MODEL if set, else the newest fast "flash" model this key can use (looked up once)."""
-    global _gemini_model
+def gemini_models() -> list[str]:
+    """Models to try in order: GEMINI_MODEL if set, else the newest stable "flash" models this key can use,
+    with a flash-lite as a backup for when Google says the bigger ones are overloaded (looked up once)."""
+    global _gemini_models
     if os.environ.get("GEMINI_MODEL"):
-        return os.environ["GEMINI_MODEL"]
-    if not _gemini_model:
+        return [os.environ["GEMINI_MODEL"]]
+    if not _gemini_models:
         names = [
             m["name"].removeprefix("models/")
             for m in gemini_request("models?pageSize=200").get("models", [])
             if "generateContent" in m.get("supportedGenerationMethods", [])
         ]
-        plain = [n for n in names if "flash" in n and not re.search(r"lite|image|tts|audio|live|exp|preview|thinking", n)]
-        pool = plain or [n for n in names if "flash" in n] or names
-        if not pool:
-            raise HTTPException(503, "No Gemini model is available for this API key.")
         # e.g. "gemini-2.5-flash" sorts above "gemini-2.0-flash"; shorter (stable) names win ties
-        _gemini_model = sorted(pool, key=lambda n: ([float(x) for x in re.findall(r"\d+(?:\.\d+)?", n)[:1]] or [0], -len(n)), reverse=True)[0]
-    return _gemini_model
+        newest = lambda pool: sorted(pool, key=lambda n: ([float(x) for x in re.findall(r"\d+(?:\.\d+)?", n)[:1]] or [0], -len(n)), reverse=True)
+        stable = [n for n in names if not re.search(r"image|tts|audio|live|exp|preview|thinking|\d{3}$", n)]
+        flash = newest([n for n in stable if "flash" in n and "lite" not in n])
+        lite = newest([n for n in stable if "flash-lite" in n])
+        chain = list(dict.fromkeys(flash[:2] + lite[:1] + flash[2:3])) or newest([n for n in names if "flash" in n])[:3]
+        if not chain:
+            raise HTTPException(503, "No Gemini model is available for this API key.")
+        _gemini_models = chain
+    return _gemini_models
 
 
 class Turn(BaseModel):
@@ -441,27 +445,27 @@ def ask(body: AskIn, user: dict = Depends(current_user)):
 
 
 def generate(payload: dict) -> dict:
-    global _gemini_model
-    model = "?"
-    for attempt in range(3):
+    """Try each model in turn: when Google says one is overloaded (500/503) or out of quota (429), the next usually works."""
+    global _gemini_models
+    busy = None
+    for model in gemini_models():
         try:
-            model = gemini_model()
             return gemini_request(f"models/{model}:generateContent", payload)
         except GeminiError as err:
             # Vercel's runtime logs show this; the key is never part of Google's message
-            print(f"Gemini error {err.status} on {model} (attempt {attempt + 1}): {err}")
-            if err.status == 404 and attempt == 0 and not os.environ.get("GEMINI_MODEL"):
-                _gemini_model = None  # the cached model was retired; look up a current one
+            print(f"Gemini error {err.status} on {model}: {err}")
+            if err.status in (404, 429, 500, 503):
+                busy = err
+                if err.status == 404:
+                    _gemini_models = []  # a model was retired; look the list up again next time
+                time.sleep(0.4)
                 continue
-            if err.status in (500, 503) and attempt < 2:
-                time.sleep(1 + attempt)  # Google's "model is overloaded" usually clears in a moment
-                continue
-            if err.status == 429:
-                raise HTTPException(503, "Study Buddy is very busy right now. Please try again in a minute.") from None
             if err.status in (400, 401, 403) and re.search(r"key|permission|disabled|not been used|billing", str(err), re.I):
                 raise HTTPException(503, f"Study Buddy's API key isn't working ({err}). The site owner needs to check GEMINI_API_KEY.") from None
             raise HTTPException(502, f"Study Buddy couldn't answer that (Gemini {err.status}: {str(err)[:160]}). Please try again.") from None
-    raise HTTPException(502, "Study Buddy couldn't answer that. Please try again.")
+    if busy and busy.status == 429:
+        raise HTTPException(503, "Study Buddy has used up its free Google quota for now. Please try again in a few minutes.")
+    raise HTTPException(503, "Google's AI is very busy right now. Please try again in a minute.")
 
 
 # ---------- Pages ----------
