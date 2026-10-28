@@ -1017,7 +1017,8 @@ h2 em .wi, .hero h1 em .wi {
 }
 
 /* ---------- Get the app ---------- */
-.nav a.nav-app { display: inline-flex; align-items: center; gap: 6px; color: var(--primary); font-weight: 600; }
+.nav a.nav-app { display: inline-flex; align-items: center; gap: 6px; color: var(--primary); font-weight: 600; white-space: nowrap; }
+@media (min-width: 821px) and (max-width: 1240px) { .nav a.nav-app { font-size: 0; gap: 0; padding: 8px 10px; } .nav a.nav-app svg { width: 18px; height: 18px; } }
 .nav a.nav-app svg { width: 16px; height: 16px; }
 .app-flag {
   display: inline-flex; align-items: center; gap: 10px; margin: 0 10px 14px 0; padding: 5px 12px 5px 5px;
@@ -1084,3 +1085,4 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: man
   .loader-logo { font-size: 36px; }
   .app-ico { width: 40px; height: 40px; border-radius: 12px; }
 }
+.auth-skip { display: block; margin: 16px auto 0; }

@@ -40,6 +40,8 @@ async function api(path, opts = {}) {
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
     if (res.status === 401 && token) forgetLogin();
+    // 503 = the server is up but its database isn't connected; the details are for the site owner, not students
+    if (res.status === 503) throw new Error("Sign-in is down for a moment (the database isn't connected). You can keep using the planner on this device.");
     throw new Error(body.detail || "The server didn't respond — is it running?");
   }
   return body;
@@ -263,6 +265,14 @@ $("#authBg").onclick = closeAuth;
 $("#authClose").onclick = closeAuth;
 $("#authTabs").addEventListener("click", (e) => { const b = e.target.closest("button[data-tab]"); if (b) setAuthTab(b.dataset.tab); });
 $("#setupSignIn").onclick = () => { closeSetup(true); authTab = "login"; openAuth(); };
+$("#authSkip").onclick = () => { try { sessionStorage.setItem("swa-guest", "1"); } catch (e) {} closeAuth(); };
+// On arrival: sign in first (once per visit), then pick a class if this device has none yet
+function openStart() {
+  let guest = false;
+  try { guest = !!sessionStorage.getItem("swa-guest"); } catch (e) {}
+  if (CLOUD && !token && !guest) { authTab = "login"; openAuth(); }
+  else if (!state.profile && !pulling) openSetup();
+}
 $("#authForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const submit = $("#authSubmit");
@@ -1105,7 +1115,7 @@ if (token) {
 }
 
 if (!A) {
-  if (!state.profile && !pulling) openSetup();
+  openStart();
 } else {
   // Intro: book pages flip, name rises, curtain lifts, dashboard builds in
   if (lenis) lenis.stop();
@@ -1127,7 +1137,7 @@ if (!A) {
     .from("#quote, .hero-cta > *", { y: 30, opacity: 0, stagger: 0.1, duration: 1 }, "<0.3")
     .from(".stat-card", { y: 60, opacity: 0, rotate: (i) => (i % 2 ? 4 : -4), stagger: 0.1, duration: 1.2, onStart: () => renderStats(true) }, "<0.1")
     .from(".ticker", { yPercent: 100, opacity: 0, duration: 1 }, "<0.3")
-    .add(() => { if (lenis) lenis.start(); if (!state.profile && !pulling) openSetup(); });
+    .add(() => { if (lenis) lenis.start(); openStart(); });
 
   // Floating blobs drift forever
   $$(".blob").forEach((b, i) => gsap.to(b, { x: i % 2 ? 60 : -60, y: i ? 40 : -40, duration: 7 + i * 2, repeat: -1, yoyo: true, ease: "sine.inOut" }));
