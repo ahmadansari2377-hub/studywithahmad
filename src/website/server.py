@@ -10,6 +10,8 @@ import json
 import os
 import re
 import secrets
+import urllib.error
+import urllib.request
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -107,6 +109,12 @@ CREATE TABLE IF NOT EXISTS login_failures (
 );
 CREATE INDEX IF NOT EXISTS login_failures_user_idx ON login_failures (username, attempted_at);
 CREATE INDEX IF NOT EXISTS login_failures_ip_idx ON login_failures (ip, attempted_at);
+CREATE TABLE IF NOT EXISTS ai_usage (
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    day     DATE NOT NULL,
+    count   INT NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, day)
+);
 """
 
 pool: ConnectionPool | None = None
@@ -301,6 +309,150 @@ def put_state(body: StateIn, user: dict = Depends(current_user)):
             (user["id"], Jsonb(body.data)),
         ).fetchone()[0]
     return {"updated_at": updated.isoformat()}
+
+
+# ---------- AI Study Buddy (Google Gemini) ----------
+AI_DAILY_LIMIT = 40        # questions per student per day, so one key can serve many students
+GEMINI_BASE = os.environ.get("GEMINI_API_BASE", "https://generativelanguage.googleapis.com/v1beta")
+_gemini_model: str | None = None
+
+BUDDY_PROMPT = """You are "Study Buddy", a friendly tutor inside Study with Ahmad, a study planner for Punjab Board
+(PTB / BISE) Matric and Intermediate students in Pakistan. The student is in {level}{subject}.
+
+- Explain simply, the way a good Pakistani teacher would, using the PTB syllabus and board-exam style.
+- For numericals: list the given values, the formula, then solve step by step with units, and box the final answer as **Answer: ...**.
+- For "past paper" requests, write board-style MCQs (with answers) and short/long questions on the topic. Say they are practice
+  questions in the board's style; never claim they appeared in a specific year's paper.
+- Write maths as plain text (v = u + at, x^2, sqrt(2)); never use LaTeX.
+- Keep answers short and scannable: short paragraphs, bullet points, **bold** for key terms. Stay under 300 words unless asked for more.
+- Reply in {language}.
+- Only help with studies. Politely steer anything else back to studying. Never help with cheating during a live exam."""
+LANGUAGES = {"en": "English", "roman": "Roman Urdu (Urdu written in English letters)", "ur": "Urdu script"}
+
+
+def gemini_key() -> str:
+    key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or ""
+    if not key.strip():
+        raise HTTPException(503, "Study Buddy isn't switched on yet (the site owner needs to add GEMINI_API_KEY).")
+    return key.strip()
+
+
+def gemini_request(path: str, payload: dict | None = None) -> dict:
+    req = urllib.request.Request(
+        f"{GEMINI_BASE}/{path}",
+        data=json.dumps(payload).encode() if payload is not None else None,
+        headers={"Content-Type": "application/json", "x-goog-api-key": gemini_key()},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=40) as res:
+            return json.loads(res.read())
+    except urllib.error.HTTPError as err:
+        detail = ""
+        try:
+            detail = json.loads(err.read()).get("error", {}).get("message", "")
+        except Exception:
+            pass
+        raise GeminiError(err.code, detail) from None
+    except (urllib.error.URLError, TimeoutError):
+        raise HTTPException(504, "Study Buddy took too long to answer. Please try again.") from None
+
+
+class GeminiError(Exception):
+    def __init__(self, status: int, message: str):
+        super().__init__(message)
+        self.status = status
+
+
+def gemini_model() -> str:
+    """GEMINI_MODEL if set, else the newest fast "flash" model this key can use (looked up once)."""
+    global _gemini_model
+    if os.environ.get("GEMINI_MODEL"):
+        return os.environ["GEMINI_MODEL"]
+    if not _gemini_model:
+        names = [
+            m["name"].removeprefix("models/")
+            for m in gemini_request("models?pageSize=200").get("models", [])
+            if "generateContent" in m.get("supportedGenerationMethods", [])
+        ]
+        plain = [n for n in names if "flash" in n and not re.search(r"lite|image|tts|audio|live|exp|preview|thinking", n)]
+        pool = plain or [n for n in names if "flash" in n] or names
+        if not pool:
+            raise HTTPException(503, "No Gemini model is available for this API key.")
+        # e.g. "gemini-2.5-flash" sorts above "gemini-2.0-flash"; shorter (stable) names win ties
+        _gemini_model = sorted(pool, key=lambda n: ([float(x) for x in re.findall(r"\d+(?:\.\d+)?", n)[:1]] or [0], -len(n)), reverse=True)[0]
+    return _gemini_model
+
+
+class Turn(BaseModel):
+    role: str
+    text: str
+
+
+class AskIn(BaseModel):
+    question: str
+    level: str = ""
+    subject: str = ""
+    language: str = "en"
+    history: list[Turn] = []
+
+
+@app.post("/api/ask")
+def ask(body: AskIn, user: dict = Depends(current_user)):
+    question = body.question.strip()
+    if not question:
+        raise HTTPException(400, "Type a question first")
+    if len(question) > 2000:
+        raise HTTPException(400, "That question is too long. Please keep it under 2000 characters.")
+    with db() as conn:
+        used = conn.execute(
+            """INSERT INTO ai_usage (user_id, day, count) VALUES (%s, CURRENT_DATE, 1)
+               ON CONFLICT (user_id, day) DO UPDATE SET count = ai_usage.count + 1 RETURNING count""",
+            (user["id"],),
+        ).fetchone()[0]
+        if used > AI_DAILY_LIMIT:  # raising rolls the +1 back
+            raise HTTPException(429, f"You've asked {AI_DAILY_LIMIT} questions today. Study Buddy will be back tomorrow!")
+
+    level = re.sub(r"[^\w .()-]", "", body.level)[:60] or "Matric or Intermediate"
+    subject = re.sub(r"[^\w .()-]", "", body.subject)[:40]
+    contents = [
+        {"role": "model" if t.role == "model" else "user", "parts": [{"text": t.text[:3000]}]}
+        for t in body.history[-6:]
+    ] + [{"role": "user", "parts": [{"text": question}]}]
+    payload = {
+        "systemInstruction": {"parts": [{"text": BUDDY_PROMPT.format(
+            level=level, subject=f", studying {subject}" if subject else "", language=LANGUAGES.get(body.language, "English"))}]},
+        "contents": contents,
+        "generationConfig": {"temperature": 0.4, "maxOutputTokens": 1500},
+    }
+    try:
+        data = generate(payload)
+    except HTTPException:
+        with db() as conn:  # a failed answer doesn't count against today's questions
+            conn.execute("UPDATE ai_usage SET count = count - 1 WHERE user_id = %s AND day = CURRENT_DATE", (user["id"],))
+        raise
+
+    candidate = (data.get("candidates") or [{}])[0]
+    answer = "".join(p.get("text", "") for p in candidate.get("content", {}).get("parts", [])).strip()
+    if not answer:
+        answer = "I can't help with that one. Try asking about a chapter, a definition or a numerical from your syllabus."
+    return {"answer": answer, "left": AI_DAILY_LIMIT - used}
+
+
+def generate(payload: dict) -> dict:
+    global _gemini_model
+    for attempt in range(2):
+        model = gemini_model()
+        try:
+            return gemini_request(f"models/{model}:generateContent", payload)
+        except GeminiError as err:
+            if err.status == 404 and attempt == 0 and not os.environ.get("GEMINI_MODEL"):
+                _gemini_model = None  # the cached model was retired; look up a current one
+                continue
+            if err.status == 429:
+                raise HTTPException(503, "Study Buddy is very busy right now. Please try again in a minute.") from None
+            if err.status in (400, 401, 403) and "key" in str(err).lower():
+                raise HTTPException(503, "Study Buddy's API key isn't working. The site owner needs to check GEMINI_API_KEY.") from None
+            raise HTTPException(502, "Study Buddy couldn't answer that. Please try again.") from None
 
 
 # ---------- Pages ----------

@@ -44,7 +44,7 @@ async function api(path, opts = {}) {
   if (!res.ok) {
     if (res.status === 401 && token) forgetLogin();
     // 503 = the server is up but its database isn't connected; the details are for the site owner, not students
-    if (res.status === 503) throw new Error("Sign-in is down for a moment (the database isn't connected). You can keep using the planner on this device.");
+    if (res.status === 503 && /^Database not connected/.test(body.detail || "")) throw new Error("Sign-in is down for a moment (the database isn't connected). You can keep using the planner on this device.");
     throw new Error(body.detail || "The server didn't respond — is it running?");
   }
   return body;
@@ -1122,6 +1122,9 @@ function renderSelects() {
     const el = $("#" + id), cur = el.value;
     el.innerHTML = subjOptions(cur);
   });
+  const bs = $("#buddySubject"), bcur = bs.value;
+  bs.innerHTML = `<option value="">Any subject</option>${subjOptions(bcur)}`;
+  bs.value = bcur;
 }
 function renderAll(animate) {
   renderHeader();
@@ -1493,6 +1496,94 @@ $("#sounds").addEventListener("click", (e) => {
 });
 $("#soundVol").addEventListener("input", () => {
   if (soundNode) soundNode.gain.gain.setTargetAtTime(+$("#soundVol").value * (soundNode.kind === "white" ? 0.35 : 1), audio.currentTime, 0.1);
+});
+
+// ---------- AI Study Buddy ----------
+let buddyLang = "en", buddyBusy = false;
+const buddyHistory = []; // this visit only: [{ role: "user" | "model", text }]
+// Small, safe Markdown: **bold**, *italic*, `code`, headings, bullet and numbered lists, paragraphs
+function mdLite(text) {
+  const inline = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/(^|\W)\*(?!\s)(.+?)\*(?=\W|$)/g, "$1<i>$2</i>").replace(/`([^`]+)`/g, "<code>$1</code>");
+  const out = [];
+  let list = null;
+  const close = () => { if (list) { out.push(`</${list}>`); list = null; } };
+  text.split(/\r?\n/).forEach((line) => {
+    const bullet = line.match(/^\s*[-*•]\s+(.*)/), num = line.match(/^\s*\d+[.)]\s+(.*)/), head = line.match(/^\s*#{1,6}\s+(.*)/);
+    if (bullet || num) {
+      const want = bullet ? "ul" : "ol";
+      if (list !== want) { close(); out.push(`<${want}>`); list = want; }
+      out.push(`<li>${inline((bullet || num)[1])}</li>`);
+    } else if (head) { close(); out.push(`<h4>${inline(head[1])}</h4>`); }
+    else if (line.trim()) { close(); out.push(`<p>${inline(line)}</p>`); }
+    else close();
+  });
+  close();
+  return out.join("");
+}
+function addMsg(who, html) {
+  const el = document.createElement("div");
+  el.className = `msg ${who}`;
+  el.innerHTML = (who === "bot" ? '<span class="msg-ico"><svg><use href="#i-spark"/></svg></span>' : "") + `<div class="msg-body">${html}</div>`;
+  $("#buddyChat").append(el);
+  if (A) gsap.from(el, { y: 16, opacity: 0, duration: 0.5, ease: "expo.out" });
+  $("#buddyChat").scrollTop = $("#buddyChat").scrollHeight;
+  return el;
+}
+async function askBuddy(question) {
+  if (buddyBusy) return;
+  if (!CLOUD || !token) { toast("Sign in first to ask Study Buddy (it's free)"); authTab = "login"; openAuth(); return; }
+  buddyBusy = true;
+  $("#buddySend").disabled = true;
+  addMsg("me", `<p>${esc(question).replace(/\n/g, "<br>")}</p>`);
+  const typing = addMsg("bot typing", "<span class=\"dots\"><i></i><i></i><i></i></span>");
+  const s = $("#buddySubject").value;
+  try {
+    const res = await api("/api/ask", {
+      method: "POST",
+      body: JSON.stringify({
+        question, language: buddyLang, history: buddyHistory.slice(-6),
+        level: state.profile ? `Class ${state.profile.cls} (${groupOf().name})` : "",
+        subject: s ? subj(s).name : "",
+      }),
+    });
+    typing.classList.remove("typing");
+    $(".msg-body", typing).innerHTML = mdLite(res.answer);
+    if (buddyLang === "ur") $(".msg-body", typing).setAttribute("dir", "rtl");
+    buddyHistory.push({ role: "user", text: question }, { role: "model", text: res.answer });
+    $("#buddyLeft").textContent = `${res.left} question${res.left === 1 ? "" : "s"} left today`;
+  } catch (err) {
+    typing.classList.remove("typing");
+    typing.classList.add("error");
+    $(".msg-body", typing).innerHTML = `<p>${esc(err.message)}</p>`;
+  } finally {
+    buddyBusy = false;
+    $("#buddySend").disabled = false;
+    $("#buddyChat").scrollTop = $("#buddyChat").scrollHeight;
+  }
+}
+$("#buddyForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const q = $("#buddyInput").value.trim();
+  if (!q) return;
+  $("#buddyInput").value = "";
+  $("#buddyInput").style.height = "";
+  askBuddy(q);
+});
+$("#buddyInput").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#buddyForm").requestSubmit(); } });
+$("#buddyInput").addEventListener("input", (e) => { e.target.style.height = ""; e.target.style.height = Math.min(e.target.scrollHeight, 160) + "px"; });
+$("#buddyQuick").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-q]");
+  if (!b) return;
+  const inp = $("#buddyInput");
+  inp.value = b.dataset.q;
+  inp.focus();
+  inp.setSelectionRange(inp.value.length, inp.value.length);
+});
+$("#buddyLang").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-lang]");
+  if (!b) return;
+  buddyLang = b.dataset.lang;
+  $$("#buddyLang button").forEach((x) => x.classList.toggle("active", x === b));
 });
 
 // Back online: send anything saved while offline
