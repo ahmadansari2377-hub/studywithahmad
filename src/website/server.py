@@ -4,6 +4,7 @@ Run locally with:  uv run website   →  http://127.0.0.1:8000
 On Vercel, app.py at the project root exposes this `app`, and files in public/ come from the CDN.
 """
 
+import datetime as dt
 import hashlib
 import hmac
 import json
@@ -41,6 +42,7 @@ PUBLIC_FILES = {
     "study.css": ("study.css", "text/css"),
     "study.js": ("study.js", "text/javascript"),
     "syllabus.js": ("syllabus.js", "text/javascript"),
+    "entrytests.js": ("entrytests.js", "text/javascript"),
     "sw.js": ("sw.js", "text/javascript"),
     "manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
     "icons/icon-192.png": ("icons/icon-192.png", "image/png"),
@@ -118,6 +120,7 @@ CREATE TABLE IF NOT EXISTS ai_usage (
     count   INT NOT NULL DEFAULT 0,
     PRIMARY KEY (user_id, day)
 );
+ALTER TABLE users ADD COLUMN IF NOT EXISTS recovery_hash TEXT;
 """
 
 pool: ConnectionPool | None = None
@@ -230,7 +233,37 @@ def signup(body: Credentials):
             # "Ali" and "ali" signing up at the same moment: the lower(username) index lets only one through
             raise HTTPException(409, "That username is taken — try another") from None
         token = new_token(conn, user_id)
-    return {"token": token, "username": username}
+        code = new_recovery_code(conn, user_id)
+    return {"token": token, "username": username, "recovery_code": code}
+
+
+# ---------- Password recovery (no email needed) ----------
+# Each account gets a one-time recovery code, shown once. Username + code sets a new password, and a fresh code
+# replaces the used one. Only a hash of the code is stored.
+RECOVERY_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O or 1/I mix-ups
+
+
+def normalise_code(code: str) -> str:
+    return re.sub(r"[^A-Z0-9]", "", code.upper())
+
+
+def new_recovery_code(conn, user_id: int) -> str:
+    raw = "".join(secrets.choice(RECOVERY_ALPHABET) for _ in range(12))
+    conn.execute("UPDATE users SET recovery_hash = %s WHERE id = %s", (token_hash(raw), user_id))
+    return "-".join(raw[i:i + 4] for i in range(0, 12, 4))
+
+
+@app.post("/api/recovery-code")
+def recovery_code(user: dict = Depends(current_user)):
+    """A new code for a signed-in student (accounts made before codes existed, or a lost code)."""
+    with db() as conn:
+        return {"recovery_code": new_recovery_code(conn, user["id"])}
+
+
+class ResetIn(BaseModel):
+    username: str
+    code: str
+    password: str
 
 
 def client_ip(request: Request) -> str:
@@ -248,43 +281,70 @@ def minutes_word(seconds: float) -> str:
     return f"{m} minute{'s' if m != 1 else ''}"
 
 
+def guard_attempts(conn, username: str, ip: str) -> int:
+    """Raise 429 while this username+connection (or this connection overall) is locked; else return its failures.
+    Counted per username AND connection, so someone else typing your username can't lock you out;
+    the per-connection limit still stops password guessing."""
+    conn.execute("DELETE FROM login_failures WHERE attempted_at < now() - interval '1 day'")
+    user_fails, user_wait = conn.execute(
+        """SELECT count(*), EXTRACT(EPOCH FROM min(attempted_at) + make_interval(mins => %s) - now())
+           FROM login_failures WHERE username = %s AND ip = %s
+           AND attempted_at > now() - make_interval(mins => %s)""",
+        (LOCK_MINUTES, username, ip, LOCK_MINUTES),
+    ).fetchone()
+    ip_fails, ip_wait = conn.execute(
+        """SELECT count(*), EXTRACT(EPOCH FROM min(attempted_at) + make_interval(mins => %s) - now())
+           FROM login_failures WHERE ip = %s AND attempted_at > now() - make_interval(mins => %s)""",
+        (LOCK_MINUTES, ip, LOCK_MINUTES),
+    ).fetchone()
+    if user_fails >= MAX_USER_FAILS or ip_fails >= MAX_IP_FAILS:
+        wait = float(user_wait if user_fails >= MAX_USER_FAILS else ip_wait)
+        raise HTTPException(429, f"Too many wrong attempts. Please try again in {minutes_word(wait)}.")
+    return user_fails
+
+
+def record_failure(conn, username: str, ip: str, user_fails: int, what: str):
+    conn.execute("INSERT INTO login_failures (username, ip) VALUES (%s, %s)", (username, ip))
+    conn.commit()  # keep the failure even though we raise below
+    left = MAX_USER_FAILS - (user_fails + 1)
+    if left <= 0:
+        raise HTTPException(429, f"Wrong {what} 3 times — trying this account from here is paused for {LOCK_MINUTES} minutes.")
+    raise HTTPException(401, f"Wrong username or {what} — {left} {'try' if left == 1 else 'tries'} left.")
+
+
 @app.post("/api/login")
 def login(body: Credentials, request: Request):
     username, ip = body.username.strip().lower(), client_ip(request)
     with db() as conn:
-        conn.execute("DELETE FROM login_failures WHERE attempted_at < now() - interval '1 day'")
         conn.execute("DELETE FROM auth_tokens WHERE created_at < now() - make_interval(days => %s)", (TOKEN_DAYS,))
-        # Counted per username AND connection, so someone else typing your username can't lock you out;
-        # the per-connection limit below still stops password guessing.
-        user_fails, user_wait = conn.execute(
-            """SELECT count(*), EXTRACT(EPOCH FROM min(attempted_at) + make_interval(mins => %s) - now())
-               FROM login_failures WHERE username = %s AND ip = %s
-               AND attempted_at > now() - make_interval(mins => %s)""",
-            (LOCK_MINUTES, username, ip, LOCK_MINUTES),
-        ).fetchone()
-        ip_fails, ip_wait = conn.execute(
-            """SELECT count(*), EXTRACT(EPOCH FROM min(attempted_at) + make_interval(mins => %s) - now())
-               FROM login_failures WHERE ip = %s AND attempted_at > now() - make_interval(mins => %s)""",
-            (LOCK_MINUTES, ip, LOCK_MINUTES),
-        ).fetchone()
-        if user_fails >= MAX_USER_FAILS or ip_fails >= MAX_IP_FAILS:
-            wait = float(user_wait if user_fails >= MAX_USER_FAILS else ip_wait)
-            raise HTTPException(429, f"Too many wrong attempts. Please try again in {minutes_word(wait)}.")
-
+        user_fails = guard_attempts(conn, username, ip)
         row = conn.execute(
             "SELECT id, username, password_hash FROM users WHERE lower(username) = %s", (username,)
         ).fetchone()
         if not row or not check_password(body.password, row[2]):
-            conn.execute("INSERT INTO login_failures (username, ip) VALUES (%s, %s)", (username, ip))
-            conn.commit()  # keep the failure even though we raise below
-            left = MAX_USER_FAILS - (user_fails + 1)
-            if left <= 0:
-                raise HTTPException(429, f"Wrong password 3 times — signing in to this account from here is paused for {LOCK_MINUTES} minutes.")
-            raise HTTPException(401, f"Wrong username or password — {left} {'try' if left == 1 else 'tries'} left.")
-
+            record_failure(conn, username, ip, user_fails, "password")
         conn.execute("DELETE FROM login_failures WHERE username = %s", (username,))
         token = new_token(conn, row[0])
     return {"token": token, "username": row[1]}
+
+
+@app.post("/api/reset")
+def reset_password(body: ResetIn, request: Request):
+    username, ip = body.username.strip().lower(), client_ip(request)
+    if len(body.password) < 6:
+        raise HTTPException(400, "Password must be at least 6 characters")
+    with db() as conn:
+        user_fails = guard_attempts(conn, username, ip)
+        row = conn.execute("SELECT id, username, recovery_hash FROM users WHERE lower(username) = %s", (username,)).fetchone()
+        code = normalise_code(body.code)
+        if not row or not row[2] or len(code) != 12 or not hmac.compare_digest(token_hash(code), row[2]):
+            record_failure(conn, username, ip, user_fails, "recovery code")
+        conn.execute("UPDATE users SET password_hash = %s WHERE id = %s", (hash_password(body.password), row[0]))
+        conn.execute("DELETE FROM auth_tokens WHERE user_id = %s", (row[0],))  # sign out every other device
+        conn.execute("DELETE FROM login_failures WHERE username = %s", (username,))
+        token = new_token(conn, row[0])
+        new_code = new_recovery_code(conn, row[0])  # each code works once
+    return {"token": token, "username": row[1], "recovery_code": new_code}
 
 
 @app.post("/api/logout")
@@ -419,15 +479,7 @@ def ask(body: AskIn, user: dict = Depends(current_user)):
         raise HTTPException(400, "Type a question first")
     if len(question) > 2000:
         raise HTTPException(400, "That question is too long. Please keep it under 2000 characters.")
-    with db() as conn:
-        used = conn.execute(
-            """INSERT INTO ai_usage (user_id, day, count) VALUES (%s, CURRENT_DATE, 1)
-               ON CONFLICT (user_id, day) DO UPDATE SET count = ai_usage.count + 1 RETURNING count""",
-            (user["id"],),
-        ).fetchone()[0]
-        if used > AI_DAILY_LIMIT:  # raising rolls the +1 back
-            raise HTTPException(429, f"You've asked {AI_DAILY_LIMIT} questions today. Study Buddy will be back tomorrow!")
-
+    used = use_ai(user["id"])
     level = re.sub(r"[^\w .()-]", "", body.level)[:60] or "Matric or Intermediate"
     subject = re.sub(r"[^\w .()-]", "", body.subject)[:40]
     contents = [
@@ -440,18 +492,156 @@ def ask(body: AskIn, user: dict = Depends(current_user)):
         "contents": contents,
         "generationConfig": {"temperature": 0.4, "maxOutputTokens": 1500},
     }
-    try:
-        data = generate(payload)
-    except HTTPException:
-        with db() as conn:  # a failed answer doesn't count against today's questions
-            conn.execute("UPDATE ai_usage SET count = count - 1 WHERE user_id = %s AND day = CURRENT_DATE", (user["id"],))
-        raise
-
-    candidate = (data.get("candidates") or [{}])[0]
-    answer = "".join(p.get("text", "") for p in candidate.get("content", {}).get("parts", [])).strip()
+    answer = answer_text(generate_counted(payload, user["id"]))
     if not answer:
         answer = "I can't help with that one. Try asking about a chapter, a definition or a numerical from your syllabus."
     return {"answer": answer, "left": AI_DAILY_LIMIT - used}
+
+
+def use_ai(user_id: int) -> int:
+    """Count one AI request for today; refuse past the daily limit. Returns today's count."""
+    with db() as conn:
+        used = conn.execute(
+            """INSERT INTO ai_usage (user_id, day, count) VALUES (%s, CURRENT_DATE, 1)
+               ON CONFLICT (user_id, day) DO UPDATE SET count = ai_usage.count + 1 RETURNING count""",
+            (user_id,),
+        ).fetchone()[0]
+        if used > AI_DAILY_LIMIT:  # raising rolls the +1 back
+            raise HTTPException(429, f"You've used Study Buddy {AI_DAILY_LIMIT} times today. It will be back tomorrow!")
+    return used
+
+
+def generate_counted(payload: dict, user_id: int) -> dict:
+    try:
+        return generate(payload)
+    except HTTPException:
+        with db() as conn:  # a failed answer doesn't count against today's limit
+            conn.execute("UPDATE ai_usage SET count = count - 1 WHERE user_id = %s AND day = CURRENT_DATE", (user_id,))
+        raise
+
+
+def answer_text(data: dict) -> str:
+    candidate = (data.get("candidates") or [{}])[0]
+    return "".join(p.get("text", "") for p in candidate.get("content", {}).get("parts", [])).strip()
+
+
+# ---------- AI study plan ----------
+PLAN_PROMPT = """You plan revision for a Punjab Board (PTB) {level} student. Today is {today}. Their exam "{exam}" is on {exam_date}.
+They can study about {hours} hours a day. Target: {target}.
+
+Chapters still to cover (subject id | chapter number | name | status):
+{chapters}
+
+Make a day-by-day plan from {today} for {days} days. Rules:
+- Unread chapters first (most important and hardest early), then revision of read ones; leave the last 2 days before the exam
+  (if inside the plan) for full-syllabus revision and past papers.
+- Spread subjects so no day is only one subject; at most {per_day} items a day; a day off every 7th day is fine.
+- Each item: subject id (exactly as given), chapter number (0 for mixed revision), a short task (under 12 words), minutes.
+Reply with JSON only, shaped exactly:
+{{"days":[{{"date":"YYYY-MM-DD","items":[{{"subject":"physics","chapter":3,"task":"Read and make notes","minutes":45}}]}}],"tips":["...","..."]}}
+Give 2-3 short tips in {language}. Tasks in English."""
+
+
+class PlanChapter(BaseModel):
+    subject: str
+    n: int
+    name: str
+    status: str = "unread"
+
+
+class PlanIn(BaseModel):
+    exam: str
+    exam_date: str
+    hours: float = 3
+    target: str = ""
+    level: str = ""
+    language: str = "en"
+    chapters: list[PlanChapter]
+
+
+@app.post("/api/plan")
+def plan(body: PlanIn, user: dict = Depends(current_user)):
+    today = dt.datetime.now(dt.timezone(dt.timedelta(hours=5))).date()  # Pakistan time
+    try:
+        exam_day = dt.date.fromisoformat(body.exam_date[:10])
+    except ValueError:
+        raise HTTPException(400, "Pick a valid exam date") from None
+    if exam_day <= today:
+        raise HTTPException(400, "The exam date should be in the future")
+    if not body.chapters:
+        raise HTTPException(400, "Every chapter is already revised. Nothing left to plan!")
+    days = min((exam_day - today).days, 21)  # three weeks at a time keeps the answer quick; plan again later
+    hours = max(0.5, min(body.hours, 12))
+    clean = lambda s, n: re.sub(r"[^\w .,:()'&/-]", "", s)[:n]
+    chapters = "\n".join(f"{clean(c.subject, 20)} | {c.n} | {clean(c.name, 70)} | {clean(c.status, 10)}" for c in body.chapters[:150])
+    used = use_ai(user["id"])
+    payload = {
+        "contents": [{"role": "user", "parts": [{"text": PLAN_PROMPT.format(
+            level=clean(body.level, 60) or "Matric/Inter", today=today, exam=clean(body.exam, 60) or "board exam",
+            exam_date=exam_day, hours=hours, target=clean(body.target, 40) or "pass with good marks", chapters=chapters,
+            days=days, per_day=max(2, min(5, round(hours * 60 / 45))), language=LANGUAGES.get(body.language, "English"))}]}],
+        "generationConfig": {"temperature": 0.3, "maxOutputTokens": 8000, "responseMimeType": "application/json"},
+    }
+    raw = answer_text(generate_counted(payload, user["id"]))
+    try:
+        data = json.loads(raw[raw.index("{"):raw.rindex("}") + 1])
+    except ValueError:
+        raise HTTPException(502, "The AI plan came back garbled. Please try again.") from None
+    known = {c.subject for c in body.chapters}
+    out = []
+    for d in data.get("days", [])[:days + 1]:
+        try:
+            date = dt.date.fromisoformat(str(d.get("date", ""))[:10])
+        except ValueError:
+            continue
+        if not today <= date <= exam_day:
+            continue
+        items = [
+            {"subject": str(i.get("subject", "")), "chapter": int(i.get("chapter") or 0),
+             "task": str(i.get("task", ""))[:120], "minutes": max(10, min(int(i.get("minutes") or 45), 240))}
+            for i in d.get("items", [])[:6] if str(i.get("subject", "")) in known and i.get("task")
+        ]
+        if items:
+            out.append({"date": date.isoformat(), "items": items})
+    if not out:
+        raise HTTPException(502, "The AI couldn't make a plan this time. Please try again.")
+    return {"days": out, "tips": [str(t)[:200] for t in data.get("tips", [])[:3]], "left": AI_DAILY_LIMIT - used}
+
+
+# ---------- Leaderboard (opt-in) ----------
+@app.get("/api/leaderboard")
+def leaderboard(cls: str = "", city: str = "", authorization: str = Header(default="")):
+    """This week's focus minutes for students who switched the leaderboard on. Sample data never counts."""
+    today = dt.datetime.now(dt.timezone(dt.timedelta(hours=5))).date()
+    monday = (today - dt.timedelta(days=today.weekday())).isoformat()
+    where, args = ["p.data->'settings'->>'board' = 'true'"], [monday]
+    if cls in ("9", "10", "11", "12"):
+        where.append("p.data->'profile'->>'cls' = %s"); args.append(cls)
+    if city.strip():
+        where.append("lower(p.data->'settings'->>'city') = lower(%s)"); args.append(city.strip()[:30])
+    with db() as conn:
+        rows = conn.execute(
+            f"""SELECT u.id, u.username, p.data->'profile'->>'cls', p.data->'settings'->>'city',
+                       COALESCE(SUM((s->>'min')::int), 0) AS mins
+                FROM planner_data p JOIN users u ON u.id = p.user_id
+                LEFT JOIN LATERAL jsonb_array_elements(
+                    CASE WHEN jsonb_typeof(p.data->'sessions') = 'array' THEN p.data->'sessions' ELSE '[]'::jsonb END) s
+                  ON s->>'date' >= %s AND s->>'date' <= to_char(now() AT TIME ZONE 'Asia/Karachi', 'YYYY-MM-DD')
+                     AND COALESCE(s->>'sample', 'false') <> 'true' AND (s->>'min') ~ '^[0-9]{{1,3}}$'
+                WHERE {' AND '.join(where)}
+                GROUP BY u.id, u.username, 3, 4
+                ORDER BY mins DESC, u.username LIMIT 200""",
+            args,
+        ).fetchall()
+    me_id = None
+    if authorization.strip():
+        try:
+            me_id = current_user(authorization)["id"]
+        except HTTPException:
+            pass
+    board = [{"rank": i + 1, "username": r[1], "cls": r[2], "city": (r[3] or "")[:30], "minutes": r[4], "me": r[0] == me_id}
+             for i, r in enumerate(rows)]
+    return {"week_of": monday, "top": board[:20], "me": next((b for b in board if b["me"]), None)}
 
 
 def generate(payload: dict) -> dict:

@@ -252,6 +252,8 @@ let authTab = "login";
 function openAuth() {
   const signed = !!token;
   $("#authForms").hidden = signed || !CLOUD;
+  $("#authReset").hidden = true;
+  $("#authCodeBox").hidden = true;
   $("#authSigned").hidden = !signed;
   $("#authOffline").hidden = CLOUD;
   if (signed) { $("#authName").textContent = username; setSync($("#syncDot").classList.contains("error") ? "error" : "ok"); }
@@ -316,7 +318,7 @@ $("#authForm").addEventListener("submit", async (e) => {
     pulling = false;
     $("#authPass").value = "";
     renderAll(true);
-    closeAuth();
+    if (res.recovery_code) showCode(res.recovery_code, "Account ready"); else closeAuth();
     toast(hadCloud ? `Welcome back, ${res.username} — your planner is loaded` : `Signed in as ${res.username} — your planner is now saved to the cloud`);
     confetti(innerWidth / 2, innerHeight / 3, 100);
   } catch (err) {
@@ -327,6 +329,45 @@ $("#authForm").addEventListener("submit", async (e) => {
     submit.disabled = false;
   }
 });
+// ---------- Recovery codes ----------
+function authPane(id) { ["authForms", "authReset", "authCodeBox", "authSigned"].forEach((x) => ($("#" + x).hidden = x !== id)); }
+function showCode(code, kicker) {
+  $("#codeKicker").textContent = kicker;
+  $("#codeValue").textContent = code;
+  $("#codeCopy").textContent = "Copy";
+  authPane("authCodeBox");
+}
+$("#codeCopy").onclick = async () => {
+  try { await navigator.clipboard.writeText($("#codeValue").textContent); $("#codeCopy").textContent = "Copied ✓"; } catch (e) { toast("Select the code and copy it by hand"); }
+};
+$("#codeDone").onclick = () => closeAuth();
+$("#forgotBtn").onclick = () => { $("#resetUser").value = $("#authUser").value; $("#resetError").textContent = ""; authPane("authReset"); };
+$("#resetBack").onclick = () => authPane("authForms");
+$("#resetForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  $("#resetSubmit").disabled = true;
+  $("#resetError").textContent = "";
+  try {
+    const res = await api("/api/reset", { method: "POST", body: JSON.stringify({ username: $("#resetUser").value, code: $("#resetCode").value, password: $("#resetPass").value }) });
+    rememberLogin(res.token, res.username);
+    pulling = true;
+    await pullState();
+    pulling = false;
+    $("#resetPass").value = $("#resetCode").value = "";
+    renderAll(true);
+    showCode(res.recovery_code, "Password changed");
+    toast(`Welcome back, ${res.username}. Your old code is used up, so save the new one`);
+  } catch (err) {
+    pulling = false;
+    $("#resetError").textContent = err.message;
+  } finally {
+    $("#resetSubmit").disabled = false;
+  }
+});
+$("#newCode").onclick = async () => {
+  try { const res = await api("/api/recovery-code", { method: "POST" }); showCode(res.recovery_code, "New recovery code"); }
+  catch (err) { toast(err.message); }
+};
 $("#syncNow").onclick = async () => { clearTimeout(syncTimer); setSync("saving"); await pushState(); toast("Synced with the cloud"); };
 $("#signOut").onclick = async () => {
   try { await api("/api/logout", { method: "POST" }); } catch (e) {}
@@ -645,7 +686,7 @@ function drawTimer() {
   $("#ringFg").style.strokeDashoffset = C * (1 - remaining / total());
   $("#timeLabel").textContent = running
     ? (mode === "exam" ? `Mock exam · ${subj($("#focusSubject").value).name}` : mode === "focus" ? `Focusing on ${subj($("#focusSubject").value).name}` : "Break — stretch, drink water")
-    : remaining === total() ? (mode === "exam" ? "3-hour board paper" : mode === "focus" ? "Ready to focus" : "Ready for a break") : "Paused";
+    : remaining === total() ? (mode === "exam" ? `${+(state.settings.exam / 60).toFixed(1)}-hour mock paper` : mode === "focus" ? "Ready to focus" : "Ready for a break") : "Paused";
   document.title = running ? `${fmt(remaining)} · ${mode === "focus" ? "Focus" : "Break"} — Study with Ahmad` : "Study with Ahmad — Study Planner";
   const done = todaysSessions().length;
   $("#sessionDots").innerHTML = Array.from({ length: 4 }, (_, i) => `<i class="${i < done % 4 || (done && done % 4 === 0) ? "on" : ""}"></i>`).join("");
@@ -942,6 +983,7 @@ function renderExams(animate) {
       <div class="countdown">${["Days", "Hours", "Mins", "Secs"].map((u) => `<div><b data-u="${u}"><span>0</span></b><small>${u}</small></div>`).join("")}</div>
     </article>`;
   }).join("") : '<div class="list-empty exam-empty">No exams yet — add your date sheet above.</div>';
+  renderPlanExams();
   tickExams(true);
   if (animate && A) gsap.fromTo("#examGrid .exam", { y: 50, opacity: 0, rotate: -2 }, { y: 0, opacity: 1, rotate: 0, stagger: 0.08, duration: 1, ease: "expo.out" });
   refreshTriggers();
@@ -1168,6 +1210,8 @@ function renderAll(animate) {
   renderCards();
   renderProgress(animate);
   renderExtras();
+  renderEntry();
+  loadBoard();
   refreshTriggers();
 }
 
@@ -1654,6 +1698,178 @@ $("#buddyLang").addEventListener("click", (e) => {
   buddyLang = b.dataset.lang;
   $$("#buddyLang button").forEach((x) => x.classList.toggle("active", x === b));
 });
+
+// ---------- AI study plan ----------
+let lastPlan = null;
+function renderPlanExams() {
+  const sel = $("#planExam"), cur = sel.value, now = Date.now();
+  const list = state.exams.filter((x) => new Date(x.date) > now).sort((a, b) => new Date(a.date) - new Date(b.date));
+  sel.innerHTML = list.length ? list.map((x) => `<option value="${x.id}">${esc(x.title)} · ${new Date(x.date).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</option>`).join("") : '<option value="">Add an exam above first</option>';
+  if (list.some((x) => x.id === cur)) sel.value = cur;
+}
+$("#planForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!CLOUD || !token) { toast("Sign in first to make an AI study plan (it's free)"); authTab = "login"; openAuth(); return; }
+  const ex = state.exams.find((x) => x.id === $("#planExam").value);
+  if (!ex) return toast("Add an exam with its date first");
+  const only = $("#planScope").value === "subject", chapters = [];
+  bookSubjects().filter((s) => !only || s === ex.subject).forEach((s) => {
+    const b = bookOf(s);
+    b.chapters.forEach((name, i) => {
+      const n = b.start + i, pr = state.syl[sylKey(s, n)] || {};
+      if (!pr.v) chapters.push({ subject: s, n, name, status: pr.r ? "read" : "unread" });
+    });
+  });
+  const btn = $("#planBtn");
+  btn.disabled = true;
+  $("#planOut").innerHTML = '<p class="muted plan-wait"><span class="dots"><i></i><i></i><i></i></span> Making your plan. This can take up to a minute…</p>';
+  try {
+    lastPlan = await api("/api/plan", {
+      method: "POST",
+      body: JSON.stringify({
+        exam: ex.title, exam_date: dayKey(new Date(ex.date)), hours: +$("#planHours").value || 3, target: $("#planTarget").value,
+        level: `Class ${state.profile.cls} (${groupOf().name})`, language: typeof buddyLang === "string" ? buddyLang : "en", chapters,
+      }),
+    });
+    renderPlan();
+  } catch (err) {
+    $("#planOut").innerHTML = `<p class="auth-error">${esc(err.message)}</p>`;
+  } finally {
+    btn.disabled = false;
+  }
+});
+function renderPlan() {
+  const p = lastPlan, count = p.days.reduce((a, d) => a + d.items.length, 0);
+  const label = (iso) => new Date(iso + "T00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+  $("#planOut").innerHTML = `
+    ${p.tips.length ? `<ul class="plan-tips">${p.tips.map((t) => `<li>💡 ${esc(t)}</li>`).join("")}</ul>` : ""}
+    <div class="plan-days">${p.days.map((d) => `<div class="plan-day"><b>${label(d.date)}</b><ul>${d.items.map((it) => {
+      const s = subj(it.subject);
+      return `<li style="--c:${s.color}"><span class="dot"></span><span>${esc(s.name)}${it.chapter ? ` · Ch ${it.chapter}` : ""}: ${esc(it.task)}</span><small>${it.minutes} min</small></li>`;
+    }).join("")}</ul></div>`).join("")}</div>
+    <button class="btn btn-primary" id="planAdd" type="button"><svg><use href="#i-plus"/></svg>Add ${count} tasks to my planner</button>`;
+  if (A) gsap.from("#planOut .plan-day", { y: 20, opacity: 0, stagger: 0.04, duration: 0.6, ease: "expo.out" });
+}
+$("#planOut").addEventListener("click", (e) => {
+  if (!e.target.closest("#planAdd") || !lastPlan) return;
+  lastPlan.days.forEach((d) => d.items.forEach((it) => state.tasks.push({
+    id: uid(), text: `${it.chapter ? `Ch ${it.chapter}: ` : ""}${it.task} (${it.minutes} min)`, subject: it.subject, due: d.date, priority: 1, done: false,
+  })));
+  save(); renderTasks(); renderStats();
+  e.target.closest("#planAdd").disabled = true;
+  e.target.closest("#planAdd").lastChild.textContent = "Added to Tasks ✓";
+  toast("Your plan is in Tasks, each on its day");
+  confetti(...centerOf(e.target.closest("#planAdd")), 60);
+});
+
+// ---------- Leaderboard ----------
+function fmtMins(m) { return (m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`); }
+async function loadBoard() {
+  const box = $("#boardList");
+  $("#boardJoin").checked = !!state.settings.board;
+  $("#boardCity").value = state.settings.city || "";
+  if (!CLOUD) { box.innerHTML = '<li class="muted">The leaderboard needs the Study with Ahmad server.</li>'; return; }
+  const scope = $("#boardScope").value, q = new URLSearchParams();
+  if (scope === "class" && state.profile) q.set("cls", state.profile.cls);
+  if (scope === "city") { if (!state.settings.city) { box.innerHTML = '<li class="muted">Type your city above to see students near you.</li>'; return; } q.set("city", state.settings.city); }
+  try {
+    const res = await api("/api/leaderboard?" + q);
+    const row = (b) => `<li class="${b.me ? "me" : ""}"><span class="rank">${["🥇", "🥈", "🥉"][b.rank - 1] || b.rank}</span><span class="who"><b>${esc(b.username)}</b><small>${b.cls ? `Class ${esc(b.cls)}` : ""}${b.city ? ` · ${esc(b.city)}` : ""}</small></span><span class="mins">${fmtMins(b.minutes)}</span></li>`;
+    box.innerHTML = res.top.length ? res.top.map(row).join("") + (res.me && res.me.rank > res.top.length ? `<li class="gap">…</li>${row(res.me)}` : "") : '<li class="muted">Nobody here yet this week. Switch it on and be the first!</li>';
+  } catch (err) { box.innerHTML = `<li class="muted">${esc(err.message)}</li>`; }
+}
+async function saveBoardSettings() {
+  save();
+  clearTimeout(syncTimer);
+  await pushState();
+  loadBoard();
+}
+$("#boardJoin").addEventListener("change", (e) => {
+  if (!CLOUD || !token) { e.target.checked = false; toast("Sign in first to join the leaderboard"); authTab = "login"; openAuth(); return; }
+  state.settings.board = e.target.checked;
+  saveBoardSettings();
+  toast(e.target.checked ? "You're on the leaderboard. Focus sessions now count!" : "You're off the leaderboard");
+});
+$("#boardCity").addEventListener("change", (e) => {
+  state.settings.city = e.target.value.trim().slice(0, 30);
+  if (token) saveBoardSettings(); else save();
+});
+$("#boardScope").addEventListener("change", loadBoard);
+window.ScrollTrigger && A ? ScrollTrigger.create({ trigger: ".board-panel", start: "top 95%", onEnter: loadBoard }) : loadBoard();
+
+// ---------- Entry tests (MDCAT / ECAT) ----------
+// function declarations: renderAll() runs near the top of the file, before this section
+function ent() { return (state.entry ||= { test: "mdcat", dates: {} }); } // older and cloud planners have no entry-test data yet
+function etParts() { return ENTRY_TESTS[ent().test].parts; }
+function etInfo(p) { return p.subject ? { name: SUBJECT_INFO[p.subject].name, color: SUBJECT_INFO[p.subject].color } : { name: p.label, color: p.color }; }
+function etChapters(s) {
+  return [11, 12].flatMap((cls) => {
+    const b = SYLLABUS[cls][s];
+    return b ? b.chapters.map((name, i) => ({ cls, n: b.start + i, name, key: `${cls}-${s}-${b.start + i}` })) : [];
+  });
+}
+function renderEntry() {
+  const t = ENTRY_TESTS[ent().test];
+  $("#etTabs").innerHTML = Object.entries(ENTRY_TESTS).map(([k, x]) => `<button data-et="${k}" class="${k === ent().test ? "active" : ""}">${x.name}</button>`).join("");
+  $("#etName").textContent = `${t.name} · ${t.by}`;
+  $("#etMeta").textContent = `${t.for} · ${t.mcqs} MCQs in ${t.minutes} minutes · ${t.marking} · ${t.note}`;
+  $("#etMock").lastChild.textContent = `${t.minutes}-minute mock timer`;
+  const date = ent().dates[ent().test] || "";
+  $("#etDate").value = date;
+  const days = date ? Math.ceil((new Date(date + "T09:00") - Date.now()) / 864e5) : null;
+  $("#etCount").innerHTML = days === null ? '<span class="muted small">Add your test date</span>' : days >= 0 ? `<b>${days}</b><span>days left</span>` : '<span class="muted small">Test date has passed</span>';
+  $("#etBlueprint").innerHTML = t.parts.map((p) => { const i = etInfo(p); return `<i style="flex:${p.mcqs};background:${i.color}" title="${esc(i.name)}: ${p.mcqs} MCQs"><span>${esc(i.name)} ${p.mcqs}</span></i>`; }).join("");
+  $("#etGrid").innerHTML = t.parts.map((p, pi) => {
+    const i = etInfo(p), chs = p.subject ? etChapters(p.subject) : [];
+    const read = chs.filter((c) => state.syl[c.key]?.r).length;
+    return `<article class="panel et-card" style="--c:${i.color}" data-part="${pi}">
+      <div class="et-head"><h4>${esc(i.name)}</h4><span class="tag">${p.mcqs} MCQs · ${Math.round((p.mcqs / t.mcqs) * 100)}%</span></div>
+      ${chs.length ? `<div class="sb-track"><i style="--c:${i.color};transform:scaleX(${read / chs.length})"></i></div><p class="muted small">${read} of ${chs.length} FSc chapters read (Part 1 + Part 2)</p>` : `<p class="muted small">No textbook chapters: practise ${esc(p.topic)}.</p>`}
+      <div class="et-actions">${chs.length ? '<button class="btn btn-soft" data-et-open>Chapters</button>' : ""}<button class="btn btn-primary" data-et-practice><svg><use href="#i-spark"/></svg>Practice 10 MCQs</button></div>
+      ${chs.length ? `<ul class="et-chapters" hidden>${chs.map((c) => `<li data-key="${c.key}" class="${state.syl[c.key]?.r ? "on" : ""}"><button class="toggle read ${state.syl[c.key]?.r ? "on" : ""}" data-et-read><svg><use href="#i-check"/></svg></button><span>${c.cls === 11 ? "Part 1" : "Part 2"} · Ch ${c.n}: ${esc(c.name)}</span><button class="link-btn" data-et-ch="${esc(c.name)}">MCQs</button></li>`).join("")}</ul>` : ""}
+    </article>`;
+  }).join("");
+  $("#etSource").innerHTML = `Pattern from the <a href="${t.source.url}" target="_blank" rel="noopener">${esc(t.source.label)}</a>. Boards change it from year to year, so check the latest notice before your test.`;
+  refreshTriggers();
+}
+$("#etTabs").addEventListener("click", (e) => { const b = e.target.closest("[data-et]"); if (b) { ent().test = b.dataset.et; save(); renderEntry(); } });
+$("#etDate").addEventListener("change", (e) => { ent().dates[ent().test] = e.target.value; save(); renderEntry(); });
+$("#etMock").onclick = () => {
+  state.settings.exam = ENTRY_TESTS[ent().test].minutes;
+  save();
+  setMode("exam");
+  $('a[href="#focus"]').click();
+  toast(`${ENTRY_TESTS[ent().test].minutes}-minute mock timer ready. Press start when you begin`);
+};
+function practice(topic) {
+  const t = ENTRY_TESTS[ent().test];
+  $('a[href="#buddy"]').click();
+  askBuddy(`Make 10 ${t.name}-style MCQs (4 options each) on ${topic}, at entry-test level. Put the answers with a one-line reason at the end.`);
+}
+$("#etGrid").addEventListener("click", (e) => {
+  const card = e.target.closest(".et-card");
+  if (!card) return;
+  const p = etParts()[+card.dataset.part], info = etInfo(p);
+  if (e.target.closest("[data-et-open]")) { const ul = $(".et-chapters", card); ul.hidden = !ul.hidden; refreshTriggers(); return; }
+  if (e.target.closest("[data-et-practice]")) return practice(p.subject ? `FSc ${info.name} (Part 1 and Part 2)` : p.topic);
+  const ch = e.target.closest("[data-et-ch]");
+  if (ch) return practice(`${info.name}: ${ch.dataset.etCh}`);
+  const tog = e.target.closest("[data-et-read]");
+  if (tog) {
+    const li = tog.closest("li"), pr = state.syl[li.dataset.key] || {};
+    pr.r = !pr.r;
+    if (pr.r && !pr.rAt) pr.rAt = dayKey();
+    state.syl[li.dataset.key] = pr;
+    save();
+    li.classList.toggle("on", pr.r); tog.classList.toggle("on", pr.r);
+    const chs = etChapters(p.subject), read = chs.filter((c) => state.syl[c.key]?.r).length;
+    $(".sb-track i", card).style.transform = `scaleX(${read / chs.length})`;
+    $("p.muted", card).textContent = `${read} of ${chs.length} FSc chapters read (Part 1 + Part 2)`;
+    if (pr.r) confetti(...centerOf(tog), 18);
+    if (state.profile && sylSubject) renderChapters();
+  }
+});
+renderEntry();
 
 // Back online: send anything saved while offline
 addEventListener("online", () => { if (token && isDirty()) { setSync("saving"); pushState(); } });

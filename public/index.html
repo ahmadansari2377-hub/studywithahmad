@@ -324,6 +324,37 @@
           </form>
         </div>
         <div class="exam-grid" id="examGrid"></div>
+        <div class="panel plan reveal" id="planPanel">
+          <div class="panel-head"><h3><svg class="spark"><use href="#i-spark"/></svg>AI study plan</h3><span class="muted small">Day-by-day, from your unread chapters</span></div>
+          <form class="plan-form" id="planForm" autocomplete="off">
+            <label>Exam<select class="input" id="planExam"></select></label>
+            <label>Subjects<select class="input" id="planScope"><option value="all">All my subjects</option><option value="subject">Only the exam's subject</option></select></label>
+            <label>Hours a day<input class="input" type="number" id="planHours" min="1" max="12" step="0.5" value="3" /></label>
+            <label>Target<select class="input" id="planTarget"><option>Pass comfortably</option><option>70% or more</option><option selected>80% or more</option><option>A+ (90% or more)</option></select></label>
+            <button class="btn btn-primary" type="submit" id="planBtn"><svg><use href="#i-spark"/></svg>Make my plan</button>
+          </form>
+          <div class="plan-out" id="planOut"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Entry tests -->
+    <section class="section" id="entry">
+      <div class="container">
+        <div class="section-head">
+          <div><p class="kicker">MDCAT · ECAT</p><h2 class="split">Entry tests, <em>mapped out.</em></h2></div>
+          <p class="head-note reveal">The paper pattern of each test, your FSc chapters ticked off against it, and practice MCQs from Study Buddy.</p>
+        </div>
+        <div class="et-tabs reveal" id="etTabs"></div>
+        <div class="panel et-top reveal">
+          <div><h3 id="etName"></h3><p class="muted small" id="etMeta"></p></div>
+          <label class="et-date">Test date<input class="input" type="date" id="etDate" /></label>
+          <div class="et-count" id="etCount"></div>
+          <button class="btn btn-soft" id="etMock" type="button"><svg><use href="#i-clock"/></svg><span>Mock paper timer</span></button>
+        </div>
+        <div class="et-blueprint reveal" id="etBlueprint" aria-label="Paper pattern"></div>
+        <div class="et-grid" id="etGrid"></div>
+        <p class="muted small et-source" id="etSource"></p>
       </div>
     </section>
 
@@ -398,6 +429,16 @@
               <input type="color" id="subjectColor" value="#6d5dfc" aria-label="Subject colour" />
               <button class="icon-btn solid" type="submit" aria-label="Add subject"><svg><use href="#i-plus"/></svg></button>
             </form>
+          </div>
+          <div class="panel board-panel reveal">
+            <div class="panel-head"><h3>🏆 Leaderboard · this week</h3><span class="muted small">Focus minutes since Monday</span></div>
+            <div class="board-bar">
+              <label class="switch"><input type="checkbox" id="boardJoin" /><span></span>Show me on the leaderboard</label>
+              <input class="input" id="boardCity" maxlength="30" placeholder="Your city (optional)" />
+              <select class="input" id="boardScope"><option value="all">All Pakistan</option><option value="class">My class</option><option value="city">My city</option></select>
+            </div>
+            <ol class="board" id="boardList"></ol>
+            <p class="muted small">Only your username, class, city and focus minutes are shown, and only if you switch it on. Sample data never counts.</p>
           </div>
         </div>
       </div>
@@ -500,6 +541,7 @@
   <div class="tab-sheet" id="tabSheet" hidden>
     <a href="#timetable"><svg><use href="#i-cal"/></svg>Timetable</a>
     <a href="#exams"><svg><use href="#i-target"/></svg>Exams</a>
+    <a href="#entry"><svg><use href="#i-target"/></svg>MDCAT · ECAT</a>
     <a href="#flashcards"><svg><use href="#i-cards"/></svg>Flashcards</a>
     <a href="#progress-sec"><svg><use href="#i-chart"/></svg>Progress</a>
     <a href="#get-app"><svg><use href="#i-download"/></svg>Get the app</a>
@@ -512,6 +554,7 @@
     <a href="#tasks" data-sec="tasks"><svg><use href="#i-check"/></svg><span class="tip">Tasks</span></a>
     <a href="#timetable" data-sec="timetable"><svg><use href="#i-cal"/></svg><span class="tip">Timetable</span></a>
     <a href="#exams" data-sec="exams"><svg><use href="#i-target"/></svg><span class="tip">Exams</span></a>
+    <a href="#entry" data-sec="entry"><svg><use href="#i-target"/></svg><span class="tip">MDCAT · ECAT</span></a>
     <a href="#flashcards" data-sec="flashcards"><svg><use href="#i-cards"/></svg><span class="tip">Flashcards</span></a>
     <a href="#progress-sec" data-sec="progress-sec"><svg><use href="#i-chart"/></svg><span class="tip">Progress</span></a>
     <a href="#buddy" data-sec="buddy"><svg><use href="#i-spark"/></svg><span class="tip">AI Study Buddy</span></a>
@@ -603,7 +646,27 @@
           <p class="auth-error" id="authError"></p>
           <button class="btn btn-primary btn-wide" type="submit" id="authSubmit">Sign in</button>
         </form>
-        <button class="link-btn auth-skip" id="authSkip" type="button">Continue without an account</button>
+        <div class="auth-links"><button class="link-btn" id="forgotBtn" type="button">Forgot password?</button><button class="link-btn" id="authSkip" type="button">Continue without an account</button></div>
+      </div>
+      <div id="authReset" hidden>
+        <p class="kicker">Forgot password</p>
+        <h2>Use your recovery code.</h2>
+        <p class="muted auth-note">You got a recovery code like <b>ABCD-EFGH-JKLM</b> when you made your account. Enter it to choose a new password.</p>
+        <form id="resetForm" autocomplete="off">
+          <input class="input" id="resetUser" placeholder="Username" autocomplete="username" required />
+          <input class="input" id="resetCode" placeholder="Recovery code" required />
+          <input class="input" id="resetPass" type="password" placeholder="New password (6+ characters)" autocomplete="new-password" required />
+          <p class="auth-error" id="resetError"></p>
+          <button class="btn btn-primary btn-wide" type="submit" id="resetSubmit">Set new password</button>
+        </form>
+        <div class="auth-links"><button class="link-btn" id="resetBack" type="button">Back to sign in</button></div>
+      </div>
+      <div id="authCodeBox" hidden>
+        <p class="kicker" id="codeKicker">Account ready</p>
+        <h2>Save your recovery code.</h2>
+        <p class="muted auth-note">If you ever forget your password, this code lets you set a new one. It works once and is shown only now: take a screenshot or write it down.</p>
+        <div class="code-box"><code id="codeValue"></code><button class="btn btn-soft" id="codeCopy" type="button">Copy</button></div>
+        <button class="btn btn-primary btn-wide" id="codeDone" type="button">I've saved it</button>
       </div>
       <div id="authSigned" hidden>
         <p class="kicker">Your account</p>
@@ -611,6 +674,7 @@
         <p class="muted auth-note" id="authStatus"></p>
         <div class="auth-actions">
           <button class="btn btn-soft" id="syncNow">Sync now</button>
+          <button class="btn btn-soft" id="newCode">New recovery code</button>
           <button class="btn btn-primary" id="signOut">Sign out</button>
         </div>
       </div>
@@ -625,6 +689,7 @@
   <script src="https://cdn.jsdelivr.net/npm/lenis@1.1.13/dist/lenis.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.2/Sortable.min.js"></script>
   <script src="syllabus.js"></script>
+  <script src="entrytests.js"></script>
   <script src="study.js"></script>
 </body>
 </html>
