@@ -1,8 +1,0 @@
-[{
-      "relation": ["delegate_permission/common.handle_all_urls"],
-      "target": {
-        "namespace": "android_app",
-        "package_name": "app.vercel.studywithahmad",
-        "sha256_cert_fingerprints": ["3A:6E:3C:5A:5E:2F:2C:8F:D2:B9:44:4C:A5:6C:27:CF:EF:03:F1:4F:BE:89:60:76:B0:1F:E8:78:03:36:5F:E2"]
-      }
-    }]

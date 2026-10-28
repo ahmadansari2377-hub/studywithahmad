@@ -45,8 +45,20 @@ PUBLIC_FILES = {
     "icons/apple-touch-icon.png": ("icons/apple-touch-icon.png", "image/png"),
     "downloads/StudyWithAhmad.exe": ("downloads/StudyWithAhmad.exe", "application/vnd.microsoft.portable-executable"),
     "downloads/study-with-ahmad.apk": ("downloads/study-with-ahmad.apk", "application/vnd.android.package-archive"),
-    ".well-known/assetlinks.json": (".well-known/assetlinks.json", "application/json"),
 }
+
+# Lets the Android app (public/downloads/study-with-ahmad.apk) open this site full-screen, without a URL bar.
+# The fingerprint belongs to the signing key kept outside git in android-signing/.
+ASSETLINKS = [{
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+        "namespace": "android_app",
+        "package_name": "app.vercel.studywithahmad",
+        "sha256_cert_fingerprints": [
+            "3A:6E:3C:5A:5E:2F:2C:8F:D2:B9:44:4C:A5:6C:27:CF:EF:03:F1:4F:BE:89:60:76:B0:1F:E8:78:03:36:5F:E2"
+        ],
+    },
+}]
 
 
 def clean_url(value: str) -> str:
@@ -292,6 +304,12 @@ def put_state(body: StateIn, user: dict = Depends(current_user)):
 
 
 # ---------- Pages ----------
+@app.get("/.well-known/assetlinks.json")
+def assetlinks():
+    # Vercel's CDN skips dot-folders in public/, so the Android app's Digital Asset Links are served from here.
+    return ASSETLINKS
+
+
 @app.get("/{name:path}")
 def page(name: str):
     if name not in PUBLIC_FILES or not (PUBLIC / PUBLIC_FILES[name][0]).is_file():
