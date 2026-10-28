@@ -27,7 +27,7 @@ function saveLocal() { try { localStorage.setItem(KEY, JSON.stringify(state)); }
 // "dirty" = this device has changes the cloud hasn't got yet (e.g. made offline)
 const markDirty = (on) => { try { on ? localStorage.setItem("swa-dirty", "1") : localStorage.removeItem("swa-dirty"); } catch (e) {} };
 const isDirty = () => { try { return !!localStorage.getItem("swa-dirty"); } catch (e) { return false; } };
-function save() { saveLocal(); if (token) { markDirty(true); scheduleSync(); } }
+function save() { saveLocal(); if (token) { markDirty(true); scheduleSync(); } else maybeNudge(); }
 
 // ---------- Cloud database (needs the Study with Ahmad server: `uv run website`) ----------
 const CLOUD = location.protocol.startsWith("http");
@@ -287,10 +287,18 @@ $("#setupSignIn").onclick = () => { closeSetup(true); authTab = "login"; openAut
 $("#authSkip").onclick = () => { try { sessionStorage.setItem("swa-guest", "1"); } catch (e) {} closeAuth(); };
 // On arrival: sign in first (once per visit), then pick a class if this device has none yet
 function openStart() {
-  let guest = false;
-  try { guest = !!sessionStorage.getItem("swa-guest"); } catch (e) {}
-  if (CLOUD && !token && !guest) { authTab = "login"; openAuth(); }
-  else if (!state.profile && !pulling) openSetup();
+  if (!state.profile && !pulling) openSetup();
+}
+// After a few real actions (ticking chapters, adding tasks…), suggest saving to the cloud — once a day at most
+let actions = 0;
+function maybeNudge() {
+  if (token || !CLOUD || ++actions !== 5) return;
+  try { if (localStorage.getItem("swa-nudged") === dayKey()) return; localStorage.setItem("swa-nudged", dayKey()); } catch (e) {}
+  setTimeout(() => {
+    if (token || auth.classList.contains("open") || setup.classList.contains("open")) return;
+    authTab = "signup";
+    openAuth();
+  }, 900);
 }
 $("#authForm").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -444,6 +452,24 @@ function renderStats(animate) {
   badge.textContent = v.statStreak ? `🔥 ${v.statStreak}` : "";
   badge.closest(".stat-card").classList.toggle("hot", v.statStreak > 0);
   renderReviewDue();
+  renderToday();
+}
+function renderToday() {
+  const box = $("#todayPanel");
+  if (!state.profile) { box.hidden = true; return; }
+  box.hidden = false;
+  const today = dayKey(), due = state.tasks.filter((t) => !t.done && t.due && t.due <= today).sort((a, b) => b.priority - a.priority);
+  $("#todayTasks").innerHTML = due.length
+    ? due.slice(0, 3).map((t) => `<li style="--c:${subj(t.subject).color}"><span class="dot"></span>${esc(t.text)}${t.due < today ? ' <em>overdue</em>' : ""}</li>`).join("") + (due.length > 3 ? `<li class="muted">+${due.length - 3} more</li>` : "")
+    : '<li class="muted">Nothing due today. Add one in Tasks.</li>';
+  const now = new Date(), hm = now.toTimeString().slice(0, 5), d = jsDayToIdx(now.getDay());
+  const todays = state.blocks.filter((b) => b.day === d).sort((a, b) => a.start.localeCompare(b.start));
+  const live = todays.find((b) => b.start <= hm && hm < b.end), next = todays.find((b) => b.start > hm);
+  const blk = live || next;
+  $("#todayBlockK").textContent = live ? "Now" : "Next";
+  $("#todayBlock").innerHTML = blk ? `<b>${esc(blk.title)}</b> · ${live ? `until ${blk.end}` : `at ${blk.start}`}` : '<span class="muted">No more classes today</span>';
+  const ne = nextExam();
+  $("#todayExam").innerHTML = ne ? `<b>${esc(ne.title)}</b> · ${Math.max(0, Math.ceil((new Date(ne.date) - now) / 864e5))} days` : '<span class="muted">No exams added</span>';
 }
 const RING_C = 2 * Math.PI * 19;
 function setRing(id, f) {
@@ -1154,6 +1180,19 @@ $("#sampleBtn").onclick = () => {
     const n = 1 + Math.floor(Math.random() * 4);
     for (let j = 0; j < n; j++) state.sessions.push({ date: dayKey(addDays(new Date(), -i)), min: 25, subject: core[Math.floor(Math.random() * core.length)], at: `${16 + j}:00`, sample: true });
   }
+  // Tick the first chapters of each book as read (some revised), spread over the last few weeks
+  bookSubjects().forEach((s, si) => {
+    const b = bookOf(s);
+    const read = Math.max(1, Math.round(b.chapters.length * (si < core.length ? 0.45 : 0.25)));
+    for (let i = 0; i < read; i++) {
+      const k = sylKey(s, b.start + i), when = dayKey(addDays(new Date(), -(3 + i * 4 + si)));
+      const pr = state.syl[k] || {};
+      if (!pr.r) Object.assign(pr, { r: true, rAt: when });
+      if (i < read / 2 && !pr.v) Object.assign(pr, { v: true, vAt: dayKey(addDays(new Date(), -(1 + i * 2))), n: 2 });
+      state.syl[k] = pr;
+    }
+  });
+  state.exams.forEach((x) => (x.title = x.title.replace(" (update date)", "")));
   save(); renderAll(); if (A) animateCharts();
   toast("Sample study history added — charts are filled in");
 };
@@ -1224,12 +1263,40 @@ function scrollToEl(el) {
   else if (el === 0) scrollTo({ top: 0, behavior: "smooth" });
   else el.scrollIntoView({ behavior: "smooth" });
 }
+const phone = matchMedia("(max-width: 820px)");
+const TAB_OF = { hero: "hero", syllabus: "syllabus", focus: "focus", tasks: "tasks", buddy: "buddy" };
+function showTab(id) {
+  const sec = id === "top" ? $("#hero") : $("#" + id);
+  if (!sec) return;
+  $$("main > section").forEach((s) => s.classList.toggle("tab-on", s === sec));
+  $$("#tabbar [data-tab]").forEach((b) => b.classList.toggle("active", b.dataset.tab === (TAB_OF[sec.id] || "more")));
+  $("#tabSheet").hidden = true;
+  try { sessionStorage.setItem("swa-tab", sec.id); } catch (e) {}
+  if (lenis) lenis.scrollTo(0, { immediate: true }); else scrollTo(0, 0);
+  refreshTriggers();
+}
+function applyTabbed() {
+  root.classList.toggle("tabbed", phone.matches);
+  if (!phone.matches) return;
+  let last = "hero";
+  try { last = sessionStorage.getItem("swa-tab") || "hero"; } catch (e) {}
+  showTab(last);
+}
+phone.addEventListener("change", applyTabbed);
+applyTabbed();
+$("#tabMore").onclick = () => { $("#tabSheet").hidden = !$("#tabSheet").hidden; };
 document.addEventListener("click", (e) => {
   const a = e.target.closest('a[href^="#"]');
   if (!a) return;
   e.preventDefault();
   nav.classList.remove("open");
   const href = a.getAttribute("href");
+  if (root.classList.contains("tabbed") && (href === "#top" || $(href)?.closest("main"))) {
+    const sec = href === "#top" ? $("#hero") : $(href).closest("main > section");
+    showTab(sec.id);
+    if (sec.id !== href.slice(1) && href !== "#top") setTimeout(() => scrollToEl($(href)), 50);
+    return;
+  }
   if (href === "#top") scrollToEl(0); else if ($(href)) scrollToEl($(href));
 });
 let lastY = 0;
@@ -1580,6 +1647,7 @@ $("#buddyQuick").addEventListener("click", (e) => {
   inp.focus();
   inp.setSelectionRange(inp.value.length, inp.value.length);
 });
+$("#buddyExamples").addEventListener("click", (e) => { const b = e.target.closest("[data-ask]"); if (b) askBuddy(b.dataset.ask); });
 $("#buddyLang").addEventListener("click", (e) => {
   const b = e.target.closest("[data-lang]");
   if (!b) return;

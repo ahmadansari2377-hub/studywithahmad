@@ -114,6 +114,11 @@
           <p class="chip" id="todayChip"></p>
           <h1 class="split-now" id="greeting">Good day, let's get studying.</h1>
           <p class="tagline" id="tagline"></p>
+          <div class="today" id="todayPanel" hidden>
+            <div class="today-row"><span class="today-k">Today's tasks</span><ul class="today-tasks" id="todayTasks"></ul></div>
+            <div class="today-row"><span class="today-k" id="todayBlockK">Now</span><p id="todayBlock"></p></div>
+            <div class="today-row"><span class="today-k">Next exam</span><p id="todayExam"></p></div>
+          </div>
           <p class="quote" id="quote"></p>
           <div class="review-due" id="reviewDue" hidden></div>
           <div class="hero-cta">
@@ -413,7 +418,13 @@
             <span class="muted small buddy-left" id="buddyLeft"></span>
           </div>
           <div class="buddy-chat" id="buddyChat" aria-live="polite">
-            <div class="msg bot"><span class="msg-ico"><svg><use href="#i-spark"/></svg></span><div class="msg-body"><p><b>Assalam-o-Alaikum!</b> I'm your Study Buddy. Ask me to explain a topic, solve a numerical step by step, or make practice MCQs for any chapter.</p></div></div>
+            <div class="msg bot"><span class="msg-ico"><svg><use href="#i-spark"/></svg></span><div class="msg-body"><p><b>Assalam-o-Alaikum!</b> I'm your Study Buddy. Ask me to explain a topic, solve a numerical step by step, or make practice MCQs for any chapter.</p>
+              <div class="buddy-examples" id="buddyExamples">
+                <button data-ask="What is Newton's second law of motion? Explain with an example.">What is Newton's second law?</button>
+                <button data-ask="Solve step by step: a car speeds up from rest to 20 m/s in 5 s. Find its acceleration and the distance covered.">Solve: car from 0 to 20 m/s in 5 s</button>
+                <button data-ask="Make 5 board-style MCQs with answers on chemical bonding.">5 MCQs on chemical bonding</button>
+                <button data-ask="What is the difference between mitosis and meiosis? Give a short table.">Mitosis vs meiosis</button>
+              </div></div></div>
           </div>
           <div class="buddy-quick" id="buddyQuick">
             <button data-q="Explain this simply: ">💡 Explain simply</button>
@@ -476,6 +487,23 @@
       </div>
     </section>
   </main>
+
+  <!-- Phone tab bar: one section at a time -->
+  <nav class="tabbar" id="tabbar" aria-label="Sections">
+    <a href="#top" data-tab="hero"><svg><use href="#i-target"/></svg><span>Today</span></a>
+    <a href="#syllabus" data-tab="syllabus"><svg><use href="#i-book"/></svg><span>Syllabus</span></a>
+    <a href="#focus" data-tab="focus"><svg><use href="#i-clock"/></svg><span>Focus</span></a>
+    <a href="#tasks" data-tab="tasks"><svg><use href="#i-check"/></svg><span>Tasks</span></a>
+    <a href="#buddy" data-tab="buddy"><svg><use href="#i-spark"/></svg><span>AI</span></a>
+    <button type="button" id="tabMore" data-tab="more"><svg><use href="#i-menu"/></svg><span>More</span></button>
+  </nav>
+  <div class="tab-sheet" id="tabSheet" hidden>
+    <a href="#timetable"><svg><use href="#i-cal"/></svg>Timetable</a>
+    <a href="#exams"><svg><use href="#i-target"/></svg>Exams</a>
+    <a href="#flashcards"><svg><use href="#i-cards"/></svg>Flashcards</a>
+    <a href="#progress-sec"><svg><use href="#i-chart"/></svg>Progress</a>
+    <a href="#get-app"><svg><use href="#i-download"/></svg>Get the app</a>
+  </div>
 
   <!-- Floating dock -->
   <nav class="dock" id="dock" aria-label="Quick navigation">
