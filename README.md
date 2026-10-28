@@ -1,5 +1,9 @@
 # Study with Ahmad
 
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fahmadansari2377-hub%2Fwebsite&project-name=study-with-ahmad&repository-name=study-with-ahmad&env=DATABASE_URL&envDescription=Your%20Neon%20Postgres%20connection%20string%20(postgresql%3A%2F%2F...)&envLink=https%3A%2F%2Fconsole.neon.tech)
+
+**Live:** https://sudywithahmad.vercel.app
+
 A study planner for **Matric (9th, 10th)** and **Intermediate (11th, 12th)** students of the Punjab Textbook Board (PTB / PCTB).
 
 ## Features
@@ -39,6 +43,10 @@ You need [uv](https://docs.astral.sh/uv/) installed.
 The server creates its tables (`users`, `auth_tokens`, `planner_data`, `login_failures`) on first start. You can also open `public/index.html` directly without the server, but then data is only saved in that browser.
 
 ## Put it online (Vercel, free)
+
+**One click:** press the **Deploy with Vercel** button at the top. Vercel copies this repo to your GitHub, asks for `DATABASE_URL` (paste your Neon `postgresql://...` link) and publishes the site.
+
+Or do it by hand:
 
 1. Sign in at [vercel.com](https://vercel.com) with your GitHub account.
 2. Go to [vercel.com/new](https://vercel.com/new), find the **website** repository and click **Import**.
