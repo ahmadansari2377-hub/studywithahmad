@@ -74,7 +74,7 @@ The site's **Get the app** section offers:
 ## Security
 
 - Passwords are stored as scrypt hashes, never as plain text.
-- **Login limit:** after 3 wrong passwords from the same connection, signing in to that account from there is paused for 15 minutes (so nobody can lock you out by typing your username). One internet connection can make at most 10 wrong attempts per 15 minutes.
+- **Login limit:** after 3 wrong passwords from the same connection, signing in to that account from there is paused for 15 minutes (so nobody can lock you out by typing your username). One internet connection can make at most 30 wrong attempts per 15 minutes.
 - Usernames are unique regardless of capital letters (`Ali` and `ali` are the same account).
 - Sign-ins expire after 30 days.
 - The server only serves the four public files. `.env`, `.git` and the source code are never reachable from the web.
@@ -83,7 +83,7 @@ The site's **Get the app** section offers:
 
 - **No password reset yet.** Students are told to remember their password and to use **Export backup** now and then. Email recovery is a planned next step.
 - **Last save wins.** Each device uploads the whole planner, so if the same account is edited on a phone and a laptop at the same moment, the device that saves last overwrites the other. Changes made offline are kept and uploaded when the connection returns.
-- **Shared Wi-Fi.** The 10-attempts-per-connection limit counts everyone behind the same public IP (for example a school or event network) together.
+- **Shared Wi-Fi.** The 30-attempts-per-connection limit counts everyone behind the same public IP (for example a school or event network) together; it is set high enough for a busy room.
 
 ## Project files
 

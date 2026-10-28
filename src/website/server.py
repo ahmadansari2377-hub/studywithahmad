@@ -30,7 +30,7 @@ MAX_STATE_BYTES = 2_000_000
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_.]{3,30}$")
 TOKEN_DAYS = 30            # stay signed in for 30 days
 MAX_USER_FAILS = 3         # wrong passwords allowed per account...
-MAX_IP_FAILS = 10          # ...and per internet connection
+MAX_IP_FAILS = 30          # ...and per internet connection (high enough for a whole school or event on one Wi-Fi)
 LOCK_MINUTES = 15          # before trying again
 
 # Only these files from public/ are served — never .env, .git or source code.
