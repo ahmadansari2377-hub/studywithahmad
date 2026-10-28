@@ -63,6 +63,14 @@ How it runs on Vercel:
 - Python 3.14 is read from `.python-version`, and dependencies come from `pyproject.toml` / `uv.lock`.
 - Tip: in the Neon dashboard you can copy the **pooled** connection string (its host contains `-pooler`). It handles many short serverless connections better.
 
+## Apps
+
+The site's **Get the app** section offers:
+
+- **Android:** `public/downloads/study-with-ahmad.apk`, a Trusted Web Activity built with [PWABuilder](https://www.pwabuilder.com) (package `app.vercel.studywithahmad`). `public/.well-known/assetlinks.json` lets it open full-screen without an address bar. The signing key lives in `android-signing/` on the owner's PC and is **never committed**: keep a backup, because every future update (and a Play Store upload, using the `.aab` file there) must be signed with the same key.
+- **Windows:** `public/downloads/StudyWithAhmad.exe`, built from `desktop/StudyWithAhmad.cs` with `sh desktop/build.sh` (uses the C# compiler that ships with Windows). The first run installs it to `%LOCALAPPDATA%\Programs\StudyWithAhmad` with Desktop and Start menu shortcuts and opens the planner in an Edge/Chrome app window. `StudyWithAhmad.exe /uninstall` removes it.
+- **Any device:** the site is a PWA (`manifest.webmanifest`, `sw.js`), so Chrome, Edge and Safari can install it directly. iPhone users use Share → Add to Home Screen.
+
 ## Security
 
 - Passwords are stored as scrypt hashes, never as plain text.

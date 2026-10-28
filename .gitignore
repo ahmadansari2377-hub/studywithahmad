@@ -12,3 +12,8 @@ wheels/
 # Secrets (database URL, API keys)
 .env
 .env.*
+
+.vercel
+
+# Android signing key (needed for app updates / Play Store) - never commit
+android-signing/
