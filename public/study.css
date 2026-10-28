@@ -1405,3 +1405,15 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: man
 @media (max-width: 980px) { .plan-form { grid-template-columns: 1fr 1fr; } .plan-form .btn { grid-column: 1 / -1; } }
 @media (max-width: 700px) { .et-top { grid-template-columns: 1fr 1fr; } .et-top > div:first-child { grid-column: 1 / -1; } .et-top .btn { grid-column: 1 / -1; } }
 @media (max-width: 600px) { .board-bar .input { flex: 1; } .code-box code { font-size: 18px; } }
+
+/* ---------- Urdu interface ---------- */
+.ur { font-family: "Noto Nastaliq Urdu", serif; direction: rtl; unicode-bidi: isolate; letter-spacing: 0 !important; font-weight: 500; }
+h2.ur { font-size: clamp(28px, 3.6vw, 46px); line-height: 1.9; }
+h2.ur em { font-style: normal; }
+h2.ur .w { overflow: visible; padding-bottom: 0.15em; } /* Nastaliq letters hang below the line */
+.kicker.ur { font-size: 15px; letter-spacing: 0; text-transform: none; }
+.nav a .ur, .tab-sheet a .ur { font-size: 15px; line-height: 1.4; }
+.tabbar span.ur { font-size: 12.5px; line-height: 1.3; }
+.today-k.ur { font-size: 13px; text-transform: none; letter-spacing: 0; }
+.hero-cta .ur, #buddySend .ur { line-height: 1.5; font-size: 16px; }
+.section-head .ur { text-align: left; }

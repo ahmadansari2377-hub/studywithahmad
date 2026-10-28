@@ -16,7 +16,13 @@ A study planner for **Matric (9th, 10th)** and **Intermediate (11th, 12th)** stu
 - **Flashcards:** starter revision cards for your class, plus your own.
 - **Progress:** weekly chart, time per subject and a study calendar.
 - **Accounts:** your planner is saved in a PostgreSQL database (Neon), so you can sign in on any device.
-- **Dark mode**, and animations throughout (GSAP + Lenis).
+- **AI Study Buddy** (Google Gemini): explanations, step-by-step numericals and board-style MCQs in English, Roman Urdu or Urdu; 40 requests per student per day.
+- **AI study plan:** a day-by-day plan (two weeks at a time) from your unread chapters and exam date, added to Tasks in one tap.
+- **Entry tests:** MDCAT, ECAT and ECAT (ICS) paper patterns, FSc chapter tracking, mock timers and practice MCQs.
+- **Leaderboard:** opt-in weekly focus minutes, by class or city.
+- **Recovery codes:** reset a forgotten password without email.
+- **Urdu interface:** navigation, headings and main buttons in Urdu (footer switch).
+- **Dark mode**, AMOLED black and five accent colours, and animations throughout (GSAP + Lenis).
 
 Classes and groups: 9th/10th Science (Biology or Computer), and 11th/12th Pre-Medical, Pre-Engineering or ICS.
 
@@ -81,7 +87,7 @@ The site's **Get the app** section offers:
 
 ## Known limitations
 
-- **No password reset yet.** Students are told to remember their password and to use **Export backup** now and then. Email recovery is a planned next step.
+- **Password reset needs the recovery code.** There is no email reset yet; a student who loses both password and code needs a new account (their **Export backup** file can be imported into it).
 - **Last save wins.** Each device uploads the whole planner, so if the same account is edited on a phone and a laptop at the same moment, the device that saves last overwrites the other. Changes made offline are kept and uploaded when the connection returns.
 - **Shared Wi-Fi.** The 30-attempts-per-connection limit counts everyone behind the same public IP (for example a school or event network) together; it is set high enough for a busy room.
 

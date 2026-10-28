@@ -12,6 +12,49 @@ const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); r
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const jsDayToIdx = (d) => (d + 6) % 7; // Monday = 0
 
+// ---------- Urdu interface: navigation, headings and the main buttons ----------
+// Applied before the animations split the headings into words; switching language reloads the page.
+const LANG = (() => { try { return localStorage.getItem("swa-lang") === "ur" ? "ur" : "en"; } catch (e) { return "en"; } })();
+const UR = {
+  heads: {
+    syllabus: ["01 · نصاب", "آپ کی پی ٹی بی کتابیں، <em>باب بہ باب۔</em>"],
+    focus: ["02 · توجہ", "گہری پڑھائی، <em>پچیس منٹ</em> ایک وقت میں۔"],
+    tasks: ["03 · کام", "چھوٹے قدم، <em>ایک ایک کر کے مکمل۔</em>"],
+    timetable: ["04 · ٹائم ٹیبل", "آپ کا ہفتہ، <em>ایک نظر میں۔</em>"],
+    exams: ["05 · امتحانات", "الٹی گنتی، <em>پورے سکون سے۔</em>"],
+    entry: ["MDCAT · ECAT", "انٹری ٹیسٹ، <em>پورا نقشہ۔</em>"],
+    flashcards: ["06 · فلیش کارڈز", "خود کو آزمائیں، <em>کارڈ بہ کارڈ۔</em>"],
+    "progress-sec": ["07 · پیش رفت", "دیکھیں <em>گھنٹے کیسے بڑھتے ہیں۔</em>"],
+    buddy: ["08 · اے آئی ساتھی", "کہیں اٹک گئے؟ <em>بس پوچھیں۔</em>"],
+    "get-app": ["09 · ایپ", "ایپ، <em>ہر جگہ ساتھ۔</em>"],
+  },
+  links: { "#syllabus": "نصاب", "#focus": "توجہ", "#tasks": "کام", "#timetable": "ٹائم ٹیبل", "#exams": "امتحانات", "#entry": "انٹری ٹیسٹ", "#flashcards": "فلیش کارڈز", "#progress-sec": "پیش رفت", "#buddy": "اے آئی ساتھی", "#get-app": "ایپ حاصل کریں", "#top": "آج" },
+  tabs: { hero: "آج", syllabus: "نصاب", focus: "توجہ", tasks: "کام", buddy: "اے آئی", more: "مزید" },
+};
+const ur = (el, html) => { if (!el) return; el.innerHTML = html; el.classList.add("ur"); el.lang = "ur"; };
+function applyUrdu() {
+  Object.entries(UR.heads).forEach(([id, [kicker, head]]) => {
+    ur(document.querySelector(`#${CSS.escape(id)} .section-head .kicker`), kicker);
+    ur(document.querySelector(`#${CSS.escape(id)} .section-head h2`), head);
+  });
+  // text-only links (nav, More sheet); icon links keep their icon
+  document.querySelectorAll(".nav a, .tab-sheet a").forEach((a) => {
+    const t = UR.links[a.getAttribute("href")];
+    if (!t) return;
+    const label = [...a.childNodes].reverse().find((n) => n.nodeType === 3 && n.textContent.trim());
+    if (label) { const s = document.createElement("span"); s.className = "ur"; s.lang = "ur"; s.textContent = t; label.replaceWith(s); }
+  });
+  document.querySelectorAll("#tabbar [data-tab]").forEach((b) => ur(b.querySelector("span"), UR.tabs[b.dataset.tab]));
+  // the hover roll clips Nastaliq's tall letters, so Urdu buttons get plain text
+  const plain = (a, t) => { if (a) a.innerHTML = `<span class="ur" lang="ur">${t}</span>`; };
+  plain(document.querySelector('.hero-cta a[href="#syllabus"]'), "میرا نصاب کھولیں");
+  plain(document.querySelector('.hero-cta a[href="#focus"]'), "پڑھائی شروع کریں");
+  const keys = document.querySelectorAll(".today-k");
+  ur(keys[0], "آج کے کام"); ur(keys[2], "اگلا امتحان");
+  ur(document.querySelector("#buddySend span"), "پوچھیں");
+}
+if (LANG === "ur") applyUrdu();
+
 // ---------- Storage ----------
 const KEY = "studynest-v2";
 const defaults = () => ({
@@ -507,7 +550,8 @@ function renderToday() {
   const todays = state.blocks.filter((b) => b.day === d).sort((a, b) => a.start.localeCompare(b.start));
   const live = todays.find((b) => b.start <= hm && hm < b.end), next = todays.find((b) => b.start > hm);
   const blk = live || next;
-  $("#todayBlockK").textContent = live ? "Now" : "Next";
+  $("#todayBlockK").textContent = LANG === "ur" ? (live ? "ابھی" : "اگلی کلاس") : live ? "Now" : "Next";
+  if (LANG === "ur") $("#todayBlockK").classList.add("ur");
   $("#todayBlock").innerHTML = blk ? `<b>${esc(blk.title)}</b> · ${live ? `until ${blk.end}` : `at ${blk.start}`}` : '<span class="muted">No more classes today</span>';
   const ne = nextExam();
   $("#todayExam").innerHTML = ne ? `<b>${esc(ne.title)}</b> · ${Math.max(0, Math.ceil((new Date(ne.date) - now) / 864e5))} days` : '<span class="muted">No exams added</span>';
@@ -1285,6 +1329,13 @@ function applyAccent(a) {
 }
 $$("#themeSeg button").forEach((b) => b.classList.toggle("active", b.dataset.themeSet === themeNow()));
 $$("#accentSwatches button").forEach((b) => b.classList.toggle("active", b.dataset.accentSet === (root.dataset.accent || "")));
+$$("#langSeg button").forEach((b) => b.classList.toggle("active", b.dataset.langSet === LANG));
+$("#langSeg").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-lang-set]");
+  if (!b || b.dataset.langSet === LANG) return;
+  try { localStorage.setItem("swa-lang", b.dataset.langSet); } catch (err) {}
+  location.reload();
+});
 $("#themeSeg").addEventListener("click", (e) => { const b = e.target.closest("[data-theme-set]"); if (b) applyTheme(b.dataset.themeSet); });
 $("#accentSwatches").addEventListener("click", (e) => { const b = e.target.closest("[data-accent-set]"); if (b) { applyAccent(b.dataset.accentSet); toast(`${b.title} theme on`); } });
 // Header button cycles light → dark → AMOLED
