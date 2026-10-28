@@ -10,6 +10,7 @@ import json
 import os
 import re
 import secrets
+import time
 import urllib.error
 import urllib.request
 from contextlib import asynccontextmanager
@@ -353,8 +354,9 @@ def gemini_request(path: str, payload: dict | None = None) -> dict:
         except Exception:
             pass
         raise GeminiError(err.code, detail) from None
-    except (urllib.error.URLError, TimeoutError):
-        raise HTTPException(504, "Study Buddy took too long to answer. Please try again.") from None
+    except (urllib.error.URLError, TimeoutError) as err:
+        print(f"Gemini network error on {path.split('?')[0]}: {err!r}")
+        raise HTTPException(504, f"Study Buddy couldn't reach Google ({type(err).__name__}). Please try again.") from None
 
 
 class GeminiError(Exception):
@@ -440,19 +442,26 @@ def ask(body: AskIn, user: dict = Depends(current_user)):
 
 def generate(payload: dict) -> dict:
     global _gemini_model
-    for attempt in range(2):
-        model = gemini_model()
+    model = "?"
+    for attempt in range(3):
         try:
+            model = gemini_model()
             return gemini_request(f"models/{model}:generateContent", payload)
         except GeminiError as err:
+            # Vercel's runtime logs show this; the key is never part of Google's message
+            print(f"Gemini error {err.status} on {model} (attempt {attempt + 1}): {err}")
             if err.status == 404 and attempt == 0 and not os.environ.get("GEMINI_MODEL"):
                 _gemini_model = None  # the cached model was retired; look up a current one
                 continue
+            if err.status in (500, 503) and attempt < 2:
+                time.sleep(1 + attempt)  # Google's "model is overloaded" usually clears in a moment
+                continue
             if err.status == 429:
                 raise HTTPException(503, "Study Buddy is very busy right now. Please try again in a minute.") from None
-            if err.status in (400, 401, 403) and "key" in str(err).lower():
-                raise HTTPException(503, "Study Buddy's API key isn't working. The site owner needs to check GEMINI_API_KEY.") from None
-            raise HTTPException(502, "Study Buddy couldn't answer that. Please try again.") from None
+            if err.status in (400, 401, 403) and re.search(r"key|permission|disabled|not been used|billing", str(err), re.I):
+                raise HTTPException(503, f"Study Buddy's API key isn't working ({err}). The site owner needs to check GEMINI_API_KEY.") from None
+            raise HTTPException(502, f"Study Buddy couldn't answer that (Gemini {err.status}: {str(err)[:160]}). Please try again.") from None
+    raise HTTPException(502, "Study Buddy couldn't answer that. Please try again.")
 
 
 # ---------- Pages ----------
