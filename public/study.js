@@ -722,7 +722,7 @@ const C = 2 * Math.PI * 96;
 state.settings.exam = state.settings.exam || 180;
 state.settings.goal = state.settings.goal || 120;
 const timerCard = $("#timerCard");
-let mode = "focus", remaining = state.settings.focus * 60, running = false, endAt = 0, tickId = null;
+let mode = "focus", remaining = state.settings.focus * 60, running = false, endAt = 0, tickId = null, inRoom = false;
 const total = () => state.settings[mode] * 60;
 const fmt = (s) => s >= 3600 ? `${Math.floor(s / 3600)}:${pad(Math.floor((s % 3600) / 60))}:${pad(s % 60)}` : `${pad(Math.floor(s / 60))}:${pad(s % 60)}`;
 function drawTimer() {
@@ -757,11 +757,13 @@ function startTimer() {
   timerCard.classList.add("running");
   tickId = setInterval(tick, 250);
   drawTimer();
+  joinRoom();
 }
 function stopTimer() {
   running = false;
   clearInterval(tickId);
   timerCard.classList.remove("running");
+  leaveRoom();
 }
 function tick() {
   const r = Math.max(0, Math.round((endAt - Date.now()) / 1000));
@@ -1256,6 +1258,7 @@ function renderAll(animate) {
   renderExtras();
   renderEntry();
   loadBoard();
+  renderRoomPick();
   refreshTriggers();
 }
 
@@ -1869,12 +1872,13 @@ function renderEntry() {
   $("#etDate").value = date;
   const days = date ? Math.ceil((new Date(date + "T09:00") - Date.now()) / 864e5) : null;
   $("#etCount").innerHTML = days === null ? '<span class="muted small">Add your test date</span>' : days >= 0 ? `<b>${days}</b><span>days left</span>` : '<span class="muted small">Test date has passed</span>';
-  $("#etBlueprint").innerHTML = t.parts.map((p) => { const i = etInfo(p); return `<i style="flex:${p.mcqs};background:${i.color}" title="${esc(i.name)}: ${p.mcqs} MCQs"><span>${esc(i.name)} ${p.mcqs}</span></i>`; }).join("");
+  const total = t.parts.reduce((a, p) => a + p.mcqs, 0), amount = (p) => (t.unit === "%" ? `${p.mcqs}%` : `${p.mcqs} MCQs`);
+  $("#etBlueprint").innerHTML = t.parts.map((p) => { const i = etInfo(p); return `<i style="flex:${p.mcqs};background:${i.color}" title="${esc(i.name)}: ${amount(p)}"><span>${esc(i.name)} ${t.unit === "%" ? amount(p) : p.mcqs}</span></i>`; }).join("");
   $("#etGrid").innerHTML = t.parts.map((p, pi) => {
     const i = etInfo(p), chs = p.subject ? etChapters(p.subject) : [];
     const read = chs.filter((c) => state.syl[c.key]?.r).length;
     return `<article class="panel et-card" style="--c:${i.color}" data-part="${pi}">
-      <div class="et-head"><h4>${esc(i.name)}</h4><span class="tag">${p.mcqs} MCQs · ${Math.round((p.mcqs / t.mcqs) * 100)}%</span></div>
+      <div class="et-head"><h4>${esc(i.name)}</h4><span class="tag">${t.unit === "%" ? `${p.mcqs}% of the paper` : `${p.mcqs} MCQs · ${Math.round((p.mcqs / total) * 100)}%`}</span></div>
       ${chs.length ? `<div class="sb-track"><i style="--c:${i.color};transform:scaleX(${read / chs.length})"></i></div><p class="muted small">${read} of ${chs.length} FSc chapters read (Part 1 + Part 2)</p>` : `<p class="muted small">No textbook chapters: practise ${esc(p.topic)}.</p>`}
       <div class="et-actions">${chs.length ? '<button class="btn btn-soft" data-et-open>Chapters</button>' : ""}<button class="btn btn-primary" data-et-practice><svg><use href="#i-spark"/></svg>Practice 10 MCQs</button></div>
       ${chs.length ? `<ul class="et-chapters" hidden>${chs.map((c) => `<li data-key="${c.key}" class="${state.syl[c.key]?.r ? "on" : ""}"><button class="toggle read ${state.syl[c.key]?.r ? "on" : ""}" data-et-read><svg><use href="#i-check"/></svg></button><span>${c.cls === 11 ? "Part 1" : "Part 2"} · Ch ${c.n}: ${esc(c.name)}</span><button class="link-btn" data-et-ch="${esc(c.name)}">MCQs</button></li>`).join("")}</ul>` : ""}
@@ -1921,6 +1925,91 @@ $("#etGrid").addEventListener("click", (e) => {
   }
 });
 renderEntry();
+
+// ---------- Study rooms: see who else is focusing right now ----------
+function roomOptions() {
+  return [...(state.profile ? [[`class-${state.profile.cls}`, `Class ${state.profile.cls}`]] : []), ["mdcat", "MDCAT prep"], ["ecat", "ECAT prep"], ["all", "Everyone"]];
+}
+function renderRoomPick() {
+  const opts = roomOptions(), cur = state.settings.room && opts.some(([k]) => k === state.settings.room) ? state.settings.room : opts[0][0];
+  $("#roomPick").innerHTML = opts.map(([k, n]) => `<option value="${k}" ${k === cur ? "selected" : ""}>${n}</option>`).join("");
+  $("#roomOn").checked = !!state.settings.roomOn;
+}
+async function loadRoom(data) {
+  if (!CLOUD) { $("#roomList").innerHTML = '<li class="muted">Study rooms need the Study with Ahmad server.</li>'; return; }
+  try {
+    const res = data || (await api(`/api/room?room=${$("#roomPick").value}`));
+    $("#roomCount").textContent = `${res.people.length} focusing now`;
+    $("#roomList").innerHTML = res.people.length
+      ? res.people.map((p) => `<li class="${p.me ? "me" : ""}"><span class="live-dot"></span><b>${esc(p.username)}</b><span>${esc(p.subject || "studying")}</span><small>${p.left} min left</small></li>`).join("")
+      : '<li class="muted">Nobody is focusing in this room right now. Start a session and be the first!</li>';
+  } catch (err) { $("#roomList").innerHTML = `<li class="muted">${esc(err.message)}</li>`; }
+}
+async function joinRoom() {
+  if (!CLOUD || !token || !state.settings.roomOn || !["focus", "exam"].includes(mode)) return;
+  try {
+    const res = await api("/api/room/join", { method: "POST", body: JSON.stringify({ room: $("#roomPick").value, subject: subj($("#focusSubject").value).name, minutes: Math.ceil(remaining / 60) }) });
+    inRoom = true;
+    loadRoom(res);
+  } catch (err) {}
+}
+function leaveRoom() {
+  if (!inRoom || !token) return;
+  inRoom = false;
+  fetch("/api/room/leave", { method: "POST", keepalive: true, headers: { Authorization: "Bearer " + token } }).then(() => loadRoom()).catch(() => {});
+}
+addEventListener("pagehide", leaveRoom);
+$("#roomPick").addEventListener("change", () => { state.settings.room = $("#roomPick").value; save(); if (running) joinRoom(); else loadRoom(); });
+$("#roomOn").addEventListener("change", (e) => {
+  if (!CLOUD || !token) { e.target.checked = false; toast("Sign in first to join a study room"); authTab = "login"; openAuth(); return; }
+  state.settings.roomOn = e.target.checked;
+  save();
+  if (e.target.checked) { if (running) joinRoom(); toast("When your timer runs, others in the room will see you studying"); } else leaveRoom();
+});
+renderRoomPick();
+loadRoom();
+setInterval(() => { if (document.visibilityState === "visible") loadRoom(); }, 30000);
+
+// ---------- Formula solver ----------
+let solverId = SOLVER[0].id;
+function renderSolver() {
+  const f = SOLVER.find((x) => x.id === solverId);
+  $("#solverPick").innerHTML = ["Physics", "Maths"].map((g) => `<optgroup label="${g}">${SOLVER.filter((x) => x.group === g).map((x) => `<option value="${x.id}" ${x.id === solverId ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</optgroup>`).join("");
+  $("#solverFormula").textContent = f.formula;
+  $("#solverHint").textContent = f.solve ? "Fill in all boxes except the one you want to find." : "Fill in every box.";
+  $("#solverFields").innerHTML = Object.entries(f.vars).map(([k, [label, unit]]) => `<label>${esc(label)}${unit ? ` <small>(${esc(unit)})</small>` : ""}<input class="input" type="number" step="any" data-var="${k}" value="${f.defaults?.[k] ?? ""}" /></label>`).join("");
+  $("#solverOut").innerHTML = "";
+}
+$("#solverPick").addEventListener("change", (e) => { solverId = e.target.value; renderSolver(); });
+$("#solverForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const f = SOLVER.find((x) => x.id === solverId), v = {}, empty = [];
+  $$("#solverFields input").forEach((i) => (i.value.trim() === "" ? empty.push(i.dataset.var) : (v[i.dataset.var] = +i.value)));
+  const unit = (k) => f.vars[k][1], show = (n, u) => `${fmtNum(n)}${u ? " " + u : ""}`;
+  const given = Object.entries(v).map(([k, n]) => `${f.vars[k][0]} = ${show(n, unit(k))}`).join(", ");
+  let html;
+  if (f.solve) {
+    if (empty.length !== 1) { $("#solverOut").innerHTML = '<p class="auth-error">Leave exactly one box empty: the one you want to find.</p>'; return; }
+    const k = empty[0];
+    if (!f.solve[k]) { $("#solverOut").innerHTML = `<p class="auth-error">This solver can't find ${esc(f.vars[k][0])} from this formula. Try another box.</p>`; return; }
+    const [val, work] = f.solve[k](v);
+    if (typeof val === "number" && !isFinite(val)) { $("#solverOut").innerHTML = '<p class="auth-error">No real answer for these values. Check for a 0 or a negative under a square root.</p>'; return; }
+    html = `<ol class="steps"><li><b>Given:</b> ${esc(given)}</li><li><b>Formula:</b> ${esc(f.formula)}</li><li><b>Put in the values:</b> ${esc(work)}</li></ol>
+      <p class="solver-answer">${esc(f.vars[k][0])} = <b>${esc(show(val, unit(k)))}</b></p>`;
+  } else {
+    if (empty.length) { $("#solverOut").innerHTML = '<p class="auth-error">Fill in every box.</p>'; return; }
+    html = `<ol class="steps"><li><b>Given:</b> ${esc(given)}</li><li><b>Formula:</b> ${esc(f.formula)}</li>${f.results(v).map(([name, val, u, work]) => `<li>${esc(work)} → <b>${esc(name)} = ${esc(show(val, u))}</b></li>`).join("")}</ol>`;
+  }
+  $("#solverOut").innerHTML = html + '<button class="btn btn-soft" id="solverExplain" type="button"><svg><use href="#i-spark"/></svg>Explain with Study Buddy</button>';
+  if (A) gsap.from("#solverOut .steps li, #solverOut .solver-answer", { x: -20, opacity: 0, stagger: 0.08, duration: 0.5, ease: "expo.out" });
+});
+$("#solverOut").addEventListener("click", (e) => {
+  if (!e.target.closest("#solverExplain")) return;
+  const f = SOLVER.find((x) => x.id === solverId);
+  askBuddy(`Explain this ${f.name} numerical step by step, like a teacher: ${$("#solverOut .steps").innerText.replace(/\n+/g, "; ")}`);
+  $("#buddyChat").scrollIntoView({ behavior: "smooth", block: "center" });
+});
+renderSolver();
 
 // Back online: send anything saved while offline
 addEventListener("online", () => { if (token && isDirty()) { setSync("saving"); pushState(); } });

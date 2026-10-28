@@ -235,6 +235,14 @@
               <div class="panel-head"><h3>Today's sessions</h3><span class="muted" id="sessionCount">0 sessions</span></div>
               <ul class="session-log" id="sessionLog"></ul>
             </div>
+            <div class="panel room-panel reveal">
+              <div class="panel-head"><h3>👥 Study room</h3><span class="muted small" id="roomCount"></span></div>
+              <div class="room-bar">
+                <select class="input" id="roomPick" aria-label="Room"></select>
+                <label class="switch"><input type="checkbox" id="roomOn" /><span></span>Show me while I focus</label>
+              </div>
+              <ul class="room-list" id="roomList"></ul>
+            </div>
           </div>
           <div class="panel reader" id="reader" hidden>
             <div class="panel-head">
@@ -480,6 +488,17 @@
           </form>
           <p class="muted small buddy-note">Study Buddy uses Google Gemini and can make mistakes. Check important answers against your textbook. Sign in to use it: 40 free questions a day.</p>
         </div>
+        <div class="panel solver reveal" id="solver">
+          <div class="panel-head"><h3>🧮 Formula solver</h3><span class="muted small">Check your numericals step by step, no internet needed</span></div>
+          <form class="solver-form" id="solverForm" autocomplete="off">
+            <select class="input" id="solverPick" aria-label="Formula"></select>
+            <p class="solver-formula" id="solverFormula"></p>
+            <p class="muted small" id="solverHint"></p>
+            <div class="solver-fields" id="solverFields"></div>
+            <button class="btn btn-primary" type="submit">Solve</button>
+          </form>
+          <div class="solver-out" id="solverOut" aria-live="polite"></div>
+        </div>
       </div>
     </section>
 
@@ -693,6 +712,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.2/Sortable.min.js"></script>
   <script src="syllabus.js"></script>
   <script src="entrytests.js"></script>
+  <script src="solver.js"></script>
   <script src="study.js"></script>
 </body>
 </html>

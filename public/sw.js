@@ -1,10 +1,10 @@
 // Study with Ahmad service worker: makes the site installable as an app and lets it open offline.
 // Pages and files come from the network first (so updates show straight away) and fall back to the
 // cache when there is no internet. /api requests are never cached.
-const CACHE = "swa-v3";
+const CACHE = "swa-v4";
 // Script / font hosts whose (opaque) responses are worth keeping for offline use
 const CDN = ["cdnjs.cloudflare.com", "cdn.jsdelivr.net", "fonts.googleapis.com", "fonts.gstatic.com"];
-const SHELL = ["/", "/study.css", "/study.js", "/syllabus.js", "/entrytests.js", "/manifest.webmanifest", "/icons/icon-192.png"];
+const SHELL = ["/", "/study.css", "/study.js", "/syllabus.js", "/entrytests.js", "/solver.js", "/manifest.webmanifest", "/icons/icon-192.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

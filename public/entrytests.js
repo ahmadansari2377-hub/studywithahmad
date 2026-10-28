@@ -54,4 +54,36 @@ const ENTRY_TESTS = {
     ],
     source: { label: "UET entry test notice", url: "https://admission.uet.edu.pk/Downloads/Advertisements/BSC/Combined_Ad_Updated.pdf" },
   },
+  net: {
+    name: "NUST NET",
+    by: "NUST",
+    for: "Engineering and Computing admissions",
+    mcqs: 200,
+    minutes: 180,
+    marking: "No negative marking",
+    note: "Pattern from prep sites, not an official NUST notice",
+    parts: [
+      { subject: "maths", mcqs: 100 },
+      { subject: "physics", mcqs: 60 },
+      { label: "English", mcqs: 40, color: "#e0307a", topic: "SAT-style English: reading, vocabulary and sentence correction" },
+    ],
+    source: { label: "NUST NET guide (Parhlai)", url: "https://parhlai.com/blog/nust-net-past-papers" },
+  },
+  fast: {
+    name: "FAST",
+    by: "FAST-NUCES",
+    for: "BS Computing and Engineering admissions",
+    unit: "%", // only the share of each part is reported, not exact question counts
+    mcqs: 120,
+    minutes: 120,
+    marking: "−0.25 for a wrong answer",
+    note: "Pattern from prep sites, not an official FAST notice",
+    parts: [
+      { subject: "maths", mcqs: 50 },
+      { label: "Basic Maths", mcqs: 20, color: "#f2b02f", topic: "Matric-level maths (algebra, ratios, percentages, geometry)" },
+      { label: "Analytical & IQ", mcqs: 20, color: "#8a8a9a", topic: "analytical reasoning and IQ (series, patterns, puzzles)" },
+      { label: "English", mcqs: 10, color: "#e0307a", topic: "English grammar, vocabulary and comprehension" },
+    ],
+    source: { label: "FAST test guide (Parhlai)", url: "https://parhlai.com/blog/fast-test" },
+  },
 };

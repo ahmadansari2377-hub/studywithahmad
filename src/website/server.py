@@ -43,6 +43,7 @@ PUBLIC_FILES = {
     "study.js": ("study.js", "text/javascript"),
     "syllabus.js": ("syllabus.js", "text/javascript"),
     "entrytests.js": ("entrytests.js", "text/javascript"),
+    "solver.js": ("solver.js", "text/javascript"),
     "sw.js": ("sw.js", "text/javascript"),
     "manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
     "icons/icon-192.png": ("icons/icon-192.png", "image/png"),
@@ -121,6 +122,12 @@ CREATE TABLE IF NOT EXISTS ai_usage (
     PRIMARY KEY (user_id, day)
 );
 ALTER TABLE users ADD COLUMN IF NOT EXISTS recovery_hash TEXT;
+CREATE TABLE IF NOT EXISTS study_rooms (
+    user_id  BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    room     TEXT NOT NULL,
+    subject  TEXT NOT NULL DEFAULT '',
+    ends_at  TIMESTAMPTZ NOT NULL
+);
 """
 
 pool: ConnectionPool | None = None
@@ -606,6 +613,56 @@ def plan(body: PlanIn, user: dict = Depends(current_user)):
     if not out:
         raise HTTPException(502, "The AI couldn't make a plan this time. Please try again.")
     return {"days": out, "tips": [str(t)[:200] for t in data.get("tips", [])[:3]], "left": AI_DAILY_LIMIT - used}
+
+
+# ---------- Study rooms: who is focusing right now (opt-in, shown only while their timer runs) ----------
+ROOM_RE = re.compile(r"^[a-z0-9-]{2,20}$")
+
+
+class RoomIn(BaseModel):
+    room: str
+    subject: str = ""
+    minutes: int = 25
+
+
+def room_list(conn, room: str, me: int | None = None) -> dict:
+    rows = conn.execute(
+        """SELECT u.username, r.subject, CEIL(EXTRACT(EPOCH FROM r.ends_at - now()) / 60)::int, r.user_id
+           FROM study_rooms r JOIN users u ON u.id = r.user_id
+           WHERE r.room = %s AND r.ends_at > now() ORDER BY r.ends_at DESC LIMIT 50""",
+        (room,),
+    ).fetchall()
+    return {"room": room, "people": [{"username": r[0], "subject": r[1], "left": r[2], "me": r[3] == me} for r in rows]}
+
+
+@app.get("/api/room")
+def get_room(room: str):
+    if not ROOM_RE.match(room):
+        raise HTTPException(400, "Unknown room")
+    with db() as conn:
+        return room_list(conn, room)
+
+
+@app.post("/api/room/join")
+def join_room(body: RoomIn, user: dict = Depends(current_user)):
+    if not ROOM_RE.match(body.room):
+        raise HTTPException(400, "Unknown room")
+    minutes = max(1, min(body.minutes, 240))
+    with db() as conn:
+        conn.execute("DELETE FROM study_rooms WHERE ends_at < now() - interval '1 hour'")
+        conn.execute(
+            """INSERT INTO study_rooms (user_id, room, subject, ends_at) VALUES (%s, %s, %s, now() + make_interval(mins => %s))
+               ON CONFLICT (user_id) DO UPDATE SET room = EXCLUDED.room, subject = EXCLUDED.subject, ends_at = EXCLUDED.ends_at""",
+            (user["id"], body.room, re.sub(r"[^\w .()&-]", "", body.subject)[:30], minutes),
+        )
+        return room_list(conn, body.room, user["id"])
+
+
+@app.post("/api/room/leave")
+def leave_room(user: dict = Depends(current_user)):
+    with db() as conn:
+        conn.execute("DELETE FROM study_rooms WHERE user_id = %s", (user["id"],))
+    return {"ok": True}
 
 
 # ---------- Leaderboard (opt-in) ----------

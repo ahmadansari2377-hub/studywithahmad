@@ -1417,3 +1417,27 @@ h2.ur .w { overflow: visible; padding-bottom: 0.15em; } /* Nastaliq letters hang
 .today-k.ur { font-size: 13px; text-transform: none; letter-spacing: 0; }
 .hero-cta .ur, #buddySend .ur { line-height: 1.5; font-size: 16px; }
 .section-head .ur { text-align: left; }
+
+/* ---------- Study rooms ---------- */
+.room-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 12px; }
+.room-bar .input { width: auto; height: 40px; }
+.room-list { list-style: none; display: flex; flex-direction: column; gap: 6px; max-height: 240px; overflow-y: auto; }
+.room-list li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 12px; background: var(--tint); font-size: 13.5px; }
+.room-list li.me { background: var(--primary-soft); }
+.room-list li.muted { background: none; padding: 0; }
+.room-list li span:nth-of-type(2) { flex: 1; min-width: 0; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.room-list small { color: var(--muted); white-space: nowrap; }
+.live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 0 4px color-mix(in srgb, var(--mint) 25%, transparent); animation: blink 2s infinite; flex-shrink: 0; }
+
+/* ---------- Formula solver ---------- */
+.solver { margin-top: 20px; }
+.solver-form { display: flex; flex-direction: column; gap: 10px; }
+.solver-form > select { max-width: 360px; }
+.solver-formula { font-family: ui-monospace, Consolas, monospace; font-size: 16px; font-weight: 600; padding: 10px 14px; border-radius: 12px; background: var(--tint); }
+.solver-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+.solver-fields label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+.solver-form .btn { align-self: flex-start; }
+.solver-out:not(:empty) { margin-top: 16px; display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
+.steps { display: flex; flex-direction: column; gap: 6px; padding-left: 20px; font-size: 14.5px; }
+.steps b { color: var(--ink); }
+.solver-answer { padding: 10px 16px; border-radius: 12px; border: 1.5px solid var(--mint); background: color-mix(in srgb, var(--mint) 12%, var(--surface)); font-size: 16px; }
