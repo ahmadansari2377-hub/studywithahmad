@@ -299,7 +299,7 @@ function openAuth() {
   $("#authCodeBox").hidden = true;
   $("#authSigned").hidden = !signed;
   $("#authOffline").hidden = CLOUD;
-  if (signed) { $("#authName").textContent = username; setSync($("#syncDot").classList.contains("error") ? "error" : "ok"); }
+  if (signed) { $("#authName").textContent = username; setSync($("#syncDot").classList.contains("error") ? "error" : "ok"); loadAccount(); }
   $("#authError").textContent = "";
   auth.classList.add("open");
   auth.setAttribute("aria-hidden", "false");
@@ -321,7 +321,7 @@ function setAuthTab(t) {
   movePill($("#authTabs"), $("#authPill"), btn);
   $("#authSubmit").textContent = t === "login" ? "Sign in" : "Create my account";
   $("#authPass").autocomplete = t === "login" ? "current-password" : "new-password";
-  $("#authWarn").hidden = t === "login";
+  $("#authWarn").hidden = $("#authEmail").hidden = t === "login";
   $("#authError").textContent = "";
 }
 $("#accountBtn").onclick = openAuth;
@@ -353,7 +353,7 @@ $("#authForm").addEventListener("submit", async (e) => {
   try {
     const res = await api(authTab === "login" ? "/api/login" : "/api/signup", {
       method: "POST",
-      body: JSON.stringify({ username: $("#authUser").value, password: $("#authPass").value }),
+      body: JSON.stringify({ username: $("#authUser").value, password: $("#authPass").value, ...(authTab === "signup" ? { email: $("#authEmail").value } : {}) }),
     });
     rememberLogin(res.token, res.username);
     pulling = true;
@@ -384,7 +384,25 @@ $("#codeCopy").onclick = async () => {
   try { await navigator.clipboard.writeText($("#codeValue").textContent); $("#codeCopy").textContent = "Copied ✓"; } catch (e) { toast("Select the code and copy it by hand"); }
 };
 $("#codeDone").onclick = () => closeAuth();
-$("#forgotBtn").onclick = () => { $("#resetUser").value = $("#authUser").value; $("#resetError").textContent = ""; authPane("authReset"); };
+$("#forgotBtn").onclick = () => { $("#resetUser").value = $("#authUser").value; $("#resetError").textContent = ""; $("#resetSent").hidden = true; authPane("authReset"); };
+$("#resetMail").onclick = async () => {
+  const btn = $("#resetMail");
+  $("#resetError").textContent = "";
+  if (!$("#resetUser").value.trim()) { $("#resetError").textContent = "Type your username first"; return $("#resetUser").focus(); }
+  btn.disabled = true;
+  btn.textContent = "Sending…";
+  try {
+    const res = await api("/api/forgot", { method: "POST", body: JSON.stringify({ username: $("#resetUser").value }) });
+    $("#resetSent").textContent = `Code sent to ${res.sent_to}. It works for ${res.minutes} minutes — check Spam too.`;
+    $("#resetSent").hidden = false;
+    $("#resetCode").focus();
+  } catch (err) {
+    $("#resetError").textContent = err.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Email me a code";
+  }
+};
 $("#resetBack").onclick = () => authPane("authForms");
 $("#resetForm").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -411,6 +429,35 @@ $("#newCode").onclick = async () => {
   try { const res = await api("/api/recovery-code", { method: "POST" }); showCode(res.recovery_code, "New recovery code"); }
   catch (err) { toast(err.message); }
 };
+// ---------- Account: reset email and password change ----------
+async function loadAccount() {
+  try {
+    const me = await api("/api/me");
+    $("#acctEmailNow").textContent = me.email ? `· ${me.email}` : "· not added";
+    $("#acctEmail").open = !me.email && me.email_reset; // nudge students without an email to add one
+  } catch (e) {}
+}
+$("#emailForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  $("#emailError").textContent = "";
+  try {
+    const res = await api("/api/account/email", { method: "POST", body: JSON.stringify({ email: $("#emailNew").value, password: $("#emailPass").value }) });
+    $("#emailPass").value = $("#emailNew").value = "";
+    $("#acctEmailNow").textContent = res.email ? `· ${res.email}` : "· not added";
+    $("#acctEmail").open = false;
+    toast(res.email ? "Email saved: you can now reset your password by email" : "Email removed");
+  } catch (err) { $("#emailError").textContent = err.message; }
+});
+$("#passForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  $("#passError").textContent = "";
+  try {
+    await api("/api/account/password", { method: "POST", body: JSON.stringify({ old: $("#passOld").value, new: $("#passNew").value }) });
+    $("#passOld").value = $("#passNew").value = "";
+    $("#passForm").closest("details").open = false;
+    toast("Password changed. Other devices have been signed out");
+  } catch (err) { $("#passError").textContent = err.message; }
+});
 $("#syncNow").onclick = async () => { clearTimeout(syncTimer); setSync("saving"); await pushState(); toast("Synced with the cloud"); };
 $("#signOut").onclick = async () => {
   try { await api("/api/logout", { method: "POST" }); } catch (e) {}
@@ -2260,3 +2307,8 @@ if (CLOUD) fetch($("#apkLink").getAttribute("href"), { method: "HEAD" }).then((r
   a.querySelector("span").textContent = "Install from browser";
   a.onclick = (e) => { e.preventDefault(); if (installEvent) $("#installBtn").click(); else toast("Open this site in Chrome on your phone, tap ⋮ and choose “Install app”"); };
 }).catch(() => {});
+$("#resetHelp").onclick = () => {
+  closeAuth();
+  $("#feedbackBtn").click();
+  $("#fbText").value = `I forgot my password and lost my recovery code. Username: ${$("#resetUser").value.trim()}`;
+};

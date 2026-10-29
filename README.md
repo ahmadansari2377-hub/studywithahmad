@@ -20,7 +20,7 @@ A study planner for **Matric (9th, 10th)** and **Intermediate (11th, 12th)** stu
 - **AI study plan:** a day-by-day plan (two weeks at a time) from your unread chapters and exam date, added to Tasks in one tap.
 - **Entry tests:** MDCAT, ECAT and ECAT (ICS) paper patterns, FSc chapter tracking, mock timers and practice MCQs.
 - **Leaderboard:** opt-in weekly focus minutes, by class or city.
-- **Recovery codes:** reset a forgotten password without email.
+- **Password reset:** by a 6-digit email code (if the student added an email), or by the one-time recovery code. Signed-in students can add/change their email and change their password.
 - **Urdu interface:** navigation, headings and main buttons in Urdu (footer switch).
 - **Dark mode**, AMOLED black and five accent colours, and animations throughout (GSAP + Lenis).
 
@@ -77,6 +77,17 @@ The site's **Get the app** section offers:
 - **Windows:** `public/downloads/StudyWithAhmad.exe`, built from `desktop/StudyWithAhmad.cs` with `sh desktop/build.sh` (uses the C# compiler that ships with Windows). The first run installs it to `%LOCALAPPDATA%\Programs\StudyWithAhmad` with Desktop and Start menu shortcuts and opens the planner in an Edge/Chrome app window. `StudyWithAhmad.exe /uninstall` removes it.
 - **Any device:** the site is a PWA (`manifest.webmanifest`, `sw.js`), so Chrome, Edge and Safari can install it directly. iPhone users use Share → Add to Home Screen.
 
+## Password reset emails (Gmail, free)
+
+1. Use a Gmail account for the site (2-Step Verification must be on).
+2. Open [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords), create an app password named "Study with Ahmad" and copy the 16 letters.
+3. In Vercel → **study-with-ahmad** → Settings → Environment Variables, add:
+   - `SMTP_USER` = the Gmail address
+   - `SMTP_PASSWORD` = the app password
+4. Redeploy. "Forgot password → Email me a code" now works (Gmail allows about 500 emails a day).
+
+Any other SMTP service works too: also set `SMTP_HOST`, `SMTP_PORT` (465 = SSL, 587 = STARTTLS) and optionally `SMTP_FROM`.
+
 ## Security
 
 - Passwords are stored as scrypt hashes, never as plain text.
@@ -87,7 +98,7 @@ The site's **Get the app** section offers:
 
 ## Known limitations
 
-- **Password reset needs the recovery code.** There is no email reset yet; a student who loses both password and code needs a new account (their **Export backup** file can be imported into it).
+- **Email reset needs the email settings below.** Without them, students reset with their recovery code. A student who lost both can send a **Koi masla?** message; after checking it's really them, run `uv run reset-code <username>` on your PC (uses `.env`) and give them the new code it prints.
 - **Last save wins.** Each device uploads the whole planner, so if the same account is edited on a phone and a laptop at the same moment, the device that saves last overwrites the other. Changes made offline are kept and uploaded when the connection returns.
 - **Shared Wi-Fi.** The 30-attempts-per-connection limit counts everyone behind the same public IP (for example a school or event network) together; it is set high enough for a busy room.
 

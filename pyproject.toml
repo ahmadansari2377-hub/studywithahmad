@@ -16,6 +16,7 @@ dependencies = [
 
 [project.scripts]
 website = "website:main"
+reset-code = "website.server:admin_code"
 
 [build-system]
 requires = ["uv_build>=0.12.23,<0.13.0"]

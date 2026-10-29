@@ -1332,6 +1332,16 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: man
 .code-box { display: flex; align-items: center; gap: 10px; margin: 6px 0 16px; padding: 12px 14px; border-radius: 14px; background: var(--tint); border: 1.5px dashed var(--primary); }
 .code-box code { flex: 1; font-family: ui-monospace, Consolas, monospace; font-size: 22px; font-weight: 700; letter-spacing: 0.08em; color: var(--ink); }
 .auth-actions { flex-wrap: wrap; }
+.reset-row { display: flex; gap: 8px; }
+.reset-row .input { flex: 1; min-width: 0; }
+.reset-row .btn { white-space: nowrap; }
+.auth-ok { font-size: 13.5px; color: var(--mint, #2e9b6a); margin: -2px 0 0; }
+.reset-help { margin-top: 14px; text-align: center; }
+.acct-more { margin-top: 14px; border-top: 1px solid var(--line, rgba(0,0,0,0.08)); padding-top: 12px; }
+.acct-more summary { cursor: pointer; font-weight: 600; font-size: 14.5px; }
+.acct-more form { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+#authEmail[hidden] { display: none; }
+@media (max-width: 420px) { .reset-row { flex-direction: column; } }
 
 /* ---------- AI study plan ---------- */
 .plan { margin-top: 26px; }

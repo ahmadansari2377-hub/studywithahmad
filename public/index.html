@@ -689,7 +689,8 @@
         <form id="authForm" autocomplete="on">
           <input class="input" id="authUser" name="username" placeholder="Username" autocomplete="username" required />
           <input class="input" id="authPass" name="password" type="password" placeholder="Password (6+ characters)" autocomplete="current-password" required />
-          <p class="auth-warn" id="authWarn" hidden>After sign-up you get a <b>recovery code</b>: save it, it is the only way to reset a forgotten password. <b>Export backup</b> (bottom of the page) keeps an extra copy of your planner.</p>
+          <input class="input" id="authEmail" name="email" type="email" placeholder="Email (optional, for password reset)" autocomplete="email" hidden />
+          <p class="auth-warn" id="authWarn" hidden>Add an <b>email</b> so a forgotten password can be reset by email. You also get a <b>recovery code</b>: save it, it works even without email. <b>Export backup</b> (bottom of the page) keeps an extra copy of your planner.</p>
           <p class="auth-error" id="authError"></p>
           <button class="btn btn-primary btn-wide" type="submit" id="authSubmit">Sign in</button>
         </form>
@@ -697,15 +698,20 @@
       </div>
       <div id="authReset" hidden>
         <p class="kicker">Forgot password</p>
-        <h2>Use your recovery code.</h2>
-        <p class="muted auth-note">You got a recovery code like <b>ABCD-EFGH-JKLM</b> when you made your account. Enter it to choose a new password.</p>
+        <h2>Set a new password.</h2>
+        <p class="muted auth-note">Enter your username, then tap <b>Email me a code</b> (if your account has an email), or type the recovery code like <b>ABCD-EFGH-JKLM</b> you got when you made your account.</p>
         <form id="resetForm" autocomplete="off">
-          <input class="input" id="resetUser" placeholder="Username" autocomplete="username" required />
-          <input class="input" id="resetCode" placeholder="Recovery code" required />
+          <div class="reset-row">
+            <input class="input" id="resetUser" placeholder="Username" autocomplete="username" required />
+            <button class="btn btn-soft" id="resetMail" type="button">Email me a code</button>
+          </div>
+          <p class="auth-ok" id="resetSent" hidden></p>
+          <input class="input" id="resetCode" placeholder="6-digit email code or recovery code" required />
           <input class="input" id="resetPass" type="password" placeholder="New password (6+ characters)" autocomplete="new-password" required />
           <p class="auth-error" id="resetError"></p>
           <button class="btn btn-primary btn-wide" type="submit" id="resetSubmit">Set new password</button>
         </form>
+        <p class="muted small reset-help">Lost both? <button class="link-btn" id="resetHelp" type="button">Tell us here</button> with your username and a phone number, and we'll help you get back in.</p>
         <div class="auth-links"><button class="link-btn" id="resetBack" type="button">Back to sign in</button></div>
       </div>
       <div id="authCodeBox" hidden>
@@ -724,6 +730,24 @@
           <button class="btn btn-soft" id="newCode">New recovery code</button>
           <button class="btn btn-primary" id="signOut">Sign out</button>
         </div>
+        <details class="acct-more" id="acctEmail">
+          <summary>Reset email <span class="muted" id="acctEmailNow"></span></summary>
+          <form id="emailForm" autocomplete="off">
+            <input class="input" id="emailNew" type="email" placeholder="Your email (leave empty to remove)" autocomplete="email" />
+            <input class="input" id="emailPass" type="password" placeholder="Current password" autocomplete="current-password" required />
+            <p class="auth-error" id="emailError"></p>
+            <button class="btn btn-primary btn-wide" type="submit">Save email</button>
+          </form>
+        </details>
+        <details class="acct-more">
+          <summary>Change password</summary>
+          <form id="passForm" autocomplete="off">
+            <input class="input" id="passOld" type="password" placeholder="Current password" autocomplete="current-password" required />
+            <input class="input" id="passNew" type="password" placeholder="New password (6+ characters)" autocomplete="new-password" required />
+            <p class="auth-error" id="passError"></p>
+            <button class="btn btn-primary btn-wide" type="submit">Change password</button>
+          </form>
+        </details>
       </div>
       <p class="muted small auth-offline" id="authOffline" hidden>Cloud saving needs the Study with Ahmad server. Start it with <b>uv run website</b>, then open <b>http://127.0.0.1:8000</b>.</p>
     </div>

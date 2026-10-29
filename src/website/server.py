@@ -12,10 +12,12 @@ import json
 import os
 import re
 import secrets
+import smtplib
 import time
 import urllib.error
 import urllib.request
 from contextlib import asynccontextmanager
+from email.message import EmailMessage
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
@@ -125,6 +127,14 @@ CREATE TABLE IF NOT EXISTS ai_usage (
     PRIMARY KEY (user_id, day)
 );
 ALTER TABLE users ADD COLUMN IF NOT EXISTS recovery_hash TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT;
+CREATE TABLE IF NOT EXISTS email_resets (
+    user_id    BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    code_hash  TEXT NOT NULL,
+    tries      INT NOT NULL DEFAULT 0,
+    ip         TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 CREATE TABLE IF NOT EXISTS feedback (
     id         BIGSERIAL PRIMARY KEY,
     user_id    BIGINT REFERENCES users(id) ON DELETE SET NULL,
@@ -219,6 +229,7 @@ def current_user(authorization: str = Header(default="")) -> dict:
 class Credentials(BaseModel):
     username: str
     password: str
+    email: str = ""
 
 
 class StateIn(BaseModel):
@@ -239,14 +250,15 @@ def signup(body: Credentials):
         raise HTTPException(400, "Username must be 3–30 letters, numbers, dots or underscores")
     if len(body.password) < 6:
         raise HTTPException(400, "Password must be at least 6 characters")
+    email = clean_email(body.email)
     with db() as conn:
         exists = conn.execute("SELECT 1 FROM users WHERE lower(username) = lower(%s)", (username,)).fetchone()
         if exists:
             raise HTTPException(409, "That username is taken — try another")
         try:
             user_id = conn.execute(
-                "INSERT INTO users (username, password_hash) VALUES (%s, %s) RETURNING id",
-                (username, hash_password(body.password)),
+                "INSERT INTO users (username, password_hash, email) VALUES (%s, %s, %s) RETURNING id",
+                (username, hash_password(body.password), email or None),
             ).fetchone()[0]
         except psycopg.errors.UniqueViolation:
             # "Ali" and "ali" signing up at the same moment: the lower(username) index lets only one through
@@ -356,14 +368,148 @@ def reset_password(body: ResetIn, request: Request):
         user_fails = guard_attempts(conn, username, ip)
         row = conn.execute("SELECT id, username, recovery_hash FROM users WHERE lower(username) = %s", (username,)).fetchone()
         code = normalise_code(body.code)
-        if not row or not row[2] or len(code) != 12 or not hmac.compare_digest(token_hash(code), row[2]):
+        if len(code) == 6 and code.isdigit():  # the 6-digit code from a reset email
+            if not row or not email_code_ok(conn, row[0], code):
+                record_failure(conn, username, ip, user_fails, "email code")
+        elif not row or not row[2] or len(code) != 12 or not hmac.compare_digest(token_hash(code), row[2]):
             record_failure(conn, username, ip, user_fails, "recovery code")
+        conn.execute("DELETE FROM email_resets WHERE user_id = %s", (row[0],))
         conn.execute("UPDATE users SET password_hash = %s WHERE id = %s", (hash_password(body.password), row[0]))
         conn.execute("DELETE FROM auth_tokens WHERE user_id = %s", (row[0],))  # sign out every other device
         conn.execute("DELETE FROM login_failures WHERE username = %s", (username,))
         token = new_token(conn, row[0])
         new_code = new_recovery_code(conn, row[0])  # each code works once
     return {"token": token, "username": row[1], "recovery_code": new_code}
+
+
+# ---------- Password reset by email ----------
+# Optional: a student can add an email; "Forgot password" then mails a 6-digit code (valid 15 minutes, 5 tries).
+# Works once SMTP_USER and SMTP_PASSWORD are set (e.g. a Gmail address + a Google "App password").
+EMAIL_RE = re.compile(r"^[^@\s]{1,64}@[^@\s]+\.[^@\s]{2,}$")
+EMAIL_CODE_MINUTES = 15
+
+
+def clean_email(value: str) -> str:
+    email = value.strip()
+    if email and (len(email) > 120 or not EMAIL_RE.match(email)):
+        raise HTTPException(400, "That email address doesn't look right")
+    return email
+
+
+def mask_email(email: str) -> str:
+    name, _, domain = email.partition("@")
+    return f"{name[:2]}{'•' * max(1, len(name) - 2)}@{domain}"
+
+
+def mail_ready() -> bool:
+    return bool(os.environ.get("SMTP_USER", "").strip() and os.environ.get("SMTP_PASSWORD", "").strip())
+
+
+def send_mail(to: str, subject: str, text: str):
+    user = os.environ["SMTP_USER"].strip()
+    msg = EmailMessage()
+    msg["From"] = os.environ.get("SMTP_FROM", "").strip() or f"Study with Ahmad <{user}>"
+    msg["To"] = to
+    msg["Subject"] = subject
+    msg.set_content(text)
+    host = os.environ.get("SMTP_HOST", "smtp.gmail.com").strip()
+    port = int(os.environ.get("SMTP_PORT", "465"))
+    # Gmail shows app passwords as "abcd efgh ijkl mnop"; the spaces aren't part of it
+    password = os.environ["SMTP_PASSWORD"].strip().replace(" ", "")
+    if port == 465:
+        with smtplib.SMTP_SSL(host, port, timeout=20) as smtp:
+            smtp.login(user, password)
+            smtp.send_message(msg)
+    else:
+        with smtplib.SMTP(host, port, timeout=20) as smtp:
+            smtp.starttls()
+            smtp.login(user, password)
+            smtp.send_message(msg)
+
+
+def email_code_ok(conn, user_id: int, code: str) -> bool:
+    row = conn.execute(
+        "UPDATE email_resets SET tries = tries + 1 WHERE user_id = %s AND created_at > now() - make_interval(mins => %s) "
+        "RETURNING code_hash, tries",
+        (user_id, EMAIL_CODE_MINUTES),
+    ).fetchone()
+    return bool(row) and row[1] <= 5 and hmac.compare_digest(token_hash(code), row[0])
+
+
+class ForgotIn(BaseModel):
+    username: str
+
+
+@app.post("/api/forgot")
+def forgot(body: ForgotIn, request: Request):
+    """Email a 6-digit reset code to the address saved on this account."""
+    username, ip = body.username.strip().lower(), client_ip(request)
+    if not mail_ready():
+        raise HTTPException(503, "Email reset isn't switched on yet. Use your recovery code, or tap \"Koi masla?\" to ask for help.")
+    with db() as conn:
+        sent = conn.execute("SELECT count(*) FROM email_resets WHERE ip = %s AND created_at > now() - interval '1 hour'", (ip,)).fetchone()[0]
+        if sent >= 5:
+            raise HTTPException(429, "Too many reset emails from this connection. Please try again in an hour.")
+        row = conn.execute("SELECT id, email FROM users WHERE lower(username) = %s", (username,)).fetchone()
+        if not row or not row[1]:
+            raise HTTPException(404, "This account has no email saved, so use your recovery code instead.")
+        last = conn.execute("SELECT EXTRACT(EPOCH FROM now() - created_at) FROM email_resets WHERE user_id = %s", (row[0],)).fetchone()
+        if last and last[0] < 60:
+            raise HTTPException(429, "We just sent a code. Check your inbox (and Spam), or try again in a minute.")
+        code = f"{secrets.randbelow(10**6):06d}"
+        conn.execute(
+            """INSERT INTO email_resets (user_id, code_hash, ip) VALUES (%s, %s, %s)
+               ON CONFLICT (user_id) DO UPDATE SET code_hash = EXCLUDED.code_hash, tries = 0, ip = EXCLUDED.ip, created_at = now()""",
+            (row[0], token_hash(code), ip),
+        )
+        try:
+            send_mail(row[1], f"{code} is your Study with Ahmad reset code",
+                      f"Assalam-o-Alaikum!\n\nYour code to set a new Study with Ahmad password is:\n\n    {code}\n\n"
+                      f"It works for {EMAIL_CODE_MINUTES} minutes. If you didn't ask for this, ignore this email: "
+                      "your password stays the same.\n\nStudy with Ahmad\nhttps://study-with-ahmad.vercel.app\n")
+        except (OSError, smtplib.SMTPException) as err:
+            print("Reset email failed:", type(err).__name__, err)
+            conn.rollback()
+            raise HTTPException(502, "Couldn't send the email just now. Please try again, or use your recovery code.") from None
+    return {"sent_to": mask_email(row[1]), "minutes": EMAIL_CODE_MINUTES}
+
+
+# ---------- Account settings (signed in) ----------
+class EmailIn(BaseModel):
+    email: str
+    password: str
+
+
+class PasswordIn(BaseModel):
+    old: str
+    new: str
+
+
+def check_own_password(conn, user: dict, password: str):
+    stored = conn.execute("SELECT password_hash FROM users WHERE id = %s", (user["id"],)).fetchone()[0]
+    if not check_password(password, stored):
+        raise HTTPException(403, "Your current password is wrong")  # not 401: that would sign the student out
+
+
+@app.post("/api/account/email")
+def set_email(body: EmailIn, user: dict = Depends(current_user)):
+    email = clean_email(body.email)
+    with db() as conn:
+        check_own_password(conn, user, body.password)
+        conn.execute("UPDATE users SET email = %s WHERE id = %s", (email or None, user["id"]))
+    return {"email": mask_email(email) if email else ""}
+
+
+@app.post("/api/account/password")
+def change_password(body: PasswordIn, user: dict = Depends(current_user)):
+    if len(body.new) < 6:
+        raise HTTPException(400, "New password must be at least 6 characters")
+    with db() as conn:
+        check_own_password(conn, user, body.old)
+        conn.execute("UPDATE users SET password_hash = %s WHERE id = %s", (hash_password(body.new), user["id"]))
+        # sign out every other device, keep this one
+        conn.execute("DELETE FROM auth_tokens WHERE user_id = %s AND token_hash <> %s", (user["id"], token_hash(user["token"])))
+    return {"ok": True}
 
 
 @app.post("/api/logout")
@@ -375,7 +521,24 @@ def logout(user: dict = Depends(current_user)):
 
 @app.get("/api/me")
 def me(user: dict = Depends(current_user)):
-    return {"username": user["username"]}
+    with db() as conn:
+        email = conn.execute("SELECT email FROM users WHERE id = %s", (user["id"],)).fetchone()[0]
+    return {"username": user["username"], "email": mask_email(email) if email else "", "email_reset": mail_ready()}
+
+
+def admin_code():
+    """For the site owner: `uv run reset-code <username>` prints a fresh recovery code for a student who lost theirs.
+    Make sure it's really them first (e.g. through the contact they left in feedback)."""
+    import sys
+
+    if len(sys.argv) != 2:
+        sys.exit("Usage: uv run reset-code <username>")
+    with psycopg.connect(database_url(), autocommit=True) as conn:
+        conn.execute(SCHEMA)
+        row = conn.execute("SELECT id, username FROM users WHERE lower(username) = lower(%s)", (sys.argv[1].strip(),)).fetchone()
+        if not row:
+            sys.exit(f"No account called {sys.argv[1]!r}")
+        print(f"New recovery code for {row[1]}: {new_recovery_code(conn, row[0])}  (the old one no longer works)")
 
 
 @app.get("/api/state")
