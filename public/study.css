@@ -1283,8 +1283,8 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: man
 /* ---------- UI review fixes ---------- */
 /* Today dashboard in the hero */
 .hero h1 { font-size: clamp(36px, 4.4vw, 64px); }
-.today { display: grid; gap: 8px; max-width: 520px; margin: 18px 0 20px; padding: 14px 16px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow); }
-.today[hidden] { display: none; }
+#todayPanel { /* by id: ".today" also marks today's day tab, chart bar and streak cell */  display: grid; gap: 8px; max-width: 520px; margin: 18px 0 20px; padding: 14px 16px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow); }
+#todayPanel[hidden] { display: none; }
 .today-row { display: grid; grid-template-columns: 104px 1fr; gap: 10px; align-items: baseline; font-size: 14px; }
 .today-row + .today-row { padding-top: 8px; border-top: 1px solid var(--line); }
 .today-k { font-size: 11.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
@@ -1420,7 +1420,7 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: man
 
 @media (max-width: 980px) { .plan-form { grid-template-columns: 1fr 1fr; } .plan-form .btn { grid-column: 1 / -1; } }
 @media (max-width: 700px) { .et-top { grid-template-columns: 1fr 1fr; } .et-top > div:first-child { grid-column: 1 / -1; } .et-top .btn { grid-column: 1 / -1; } }
-@media (max-width: 600px) { .board-bar .input { flex: 1; } .code-box code { font-size: 18px; } }
+@media (max-width: 600px) { .board-bar .input { flex: 1 1 140px; min-width: 140px; } .code-box code { font-size: 18px; } }
 
 /* ---------- Urdu interface ---------- */
 .ur { font-family: "Noto Nastaliq Urdu", serif; direction: rtl; unicode-bidi: isolate; letter-spacing: 0 !important; font-weight: 500; }

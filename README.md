@@ -92,9 +92,23 @@ Any other SMTP service works too: also set `SMTP_HOST`, `SMTP_PORT` (465 = SSL, 
 
 - Passwords are stored as scrypt hashes, never as plain text.
 - **Login limit:** after 3 wrong passwords from the same connection, signing in to that account from there is paused for 15 minutes (so nobody can lock you out by typing your username). One internet connection can make at most 30 wrong attempts per 15 minutes.
+- **Sign-up limit:** at most 40 new accounts per internet connection per hour. That stops bots filling the database, and still lets a whole class sign up on one Wi-Fi.
+- If the database is asleep or unreachable when the server starts, it tries again on later requests (every 10 seconds at most), so sign-in comes back by itself.
 - Usernames are unique regardless of capital letters (`Ali` and `ali` are the same account).
 - Sign-ins expire after 30 days.
 - The server only serves the four public files. `.env`, `.git` and the source code are never reachable from the web.
+
+## Tests
+
+```
+uv run --with pytest --with httpx pytest
+```
+
+- `tests/test_api.py`: sign-up, login limits, planner saving, recovery-code and email resets, account settings, and that private files are never served. It uses `DATABASE_URL` (or `.env`); every test account is called `zz_test_...` and deleted afterwards.
+- `tests/test_static.py`: JavaScript syntax and `tests/check_syllabus.js` (every board, class and group has a chapter list for each of its subjects).
+- `tests/test_ui.py`: a browser test. Start `uv run website`, then run it with `BASE_URL=http://127.0.0.1:8000 PW_CHANNEL=msedge uv run --with pytest --with httpx --with playwright pytest tests/test_ui.py` (`msedge` uses the Edge already installed on Windows).
+
+GitHub Actions (`.github/workflows/tests.yml`) runs all of them on every push, against an empty throwaway Postgres, never the live database. A red ✗ next to a commit on GitHub means something broke.
 
 ## Known limitations
 

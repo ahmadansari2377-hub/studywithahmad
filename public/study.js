@@ -368,6 +368,8 @@ $("#authForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const submit = $("#authSubmit");
   submit.disabled = true;
+  // signing up and loading the planner can take a few seconds when the database has been asleep
+  submit.textContent = authTab === "login" ? "Signing in…" : "Creating your account…";
   $("#authError").textContent = "";
   try {
     const res = await api(authTab === "login" ? "/api/login" : "/api/signup", {
@@ -389,6 +391,7 @@ $("#authForm").addEventListener("submit", async (e) => {
     if (A) gsap.fromTo(".auth-card", { x: -10 }, { x: 0, duration: 0.5, ease: "elastic.out(1,0.3)" });
   } finally {
     submit.disabled = false;
+    submit.textContent = authTab === "login" ? "Sign in" : "Create my account";
   }
 });
 // ---------- Recovery codes ----------
@@ -426,6 +429,7 @@ $("#resetBack").onclick = () => authPane("authForms");
 $("#resetForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   $("#resetSubmit").disabled = true;
+  $("#resetSubmit").textContent = "Saving…";
   $("#resetError").textContent = "";
   try {
     const res = await api("/api/reset", { method: "POST", body: JSON.stringify({ username: $("#resetUser").value, code: $("#resetCode").value, password: $("#resetPass").value }) });
@@ -442,6 +446,7 @@ $("#resetForm").addEventListener("submit", async (e) => {
     $("#resetError").textContent = err.message;
   } finally {
     $("#resetSubmit").disabled = false;
+    $("#resetSubmit").textContent = "Set new password";
   }
 });
 $("#newCode").onclick = async () => {
@@ -1442,6 +1447,7 @@ function showTab(id) {
   $("#tabSheet").hidden = true;
   try { sessionStorage.setItem("swa-tab", sec.id); } catch (e) {}
   if (lenis) lenis.scrollTo(0, { immediate: true }); else scrollTo(0, 0);
+  requestAnimationFrame(syncPills);
   refreshTriggers();
 }
 function applyTabbed() {
@@ -1480,11 +1486,15 @@ document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
   if (auth.classList.contains("open")) closeAuth(); else closeSetup();
 });
-addEventListener("resize", () => {
-  movePill($("#modeTabs"), $("#modePill"), $("#modeTabs button.active"));
+// Sliding pills are measured from their buttons, so re-measure whenever the buttons' size could change
+// (window resized, or a phone tab shown: a hidden section's buttons measure 0 px wide)
+function syncPills() {
+  const m = $("#modeTabs button.active");
+  if (m) movePill($("#modeTabs"), $("#modePill"), m);
   const d = $("#dayTabs button.active");
   if (d) movePill($("#dayTabs"), $("#dayPill"), d);
-});
+}
+addEventListener("resize", syncPills);
 
 // Ticker + footer word
 const tickerItems = ["Read one chapter a day", "Revise within 24 hours", "25 minutes of focus beats 2 hours of distraction", "Past papers are your best friend", "Sleep is part of studying", "Ask your teacher — every doubt counts"];

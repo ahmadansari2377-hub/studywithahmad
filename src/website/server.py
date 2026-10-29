@@ -36,6 +36,7 @@ TOKEN_DAYS = 30            # stay signed in for 30 days
 MAX_USER_FAILS = 3         # wrong passwords allowed per account...
 MAX_IP_FAILS = 30          # ...and per internet connection (high enough for a whole school or event on one Wi-Fi)
 LOCK_MINUTES = 15          # before trying again
+MAX_SIGNUPS_PER_HOUR = 40  # new accounts per internet connection: stops bots, still lets a whole class sign up on one Wi-Fi
 
 # Only these files from public/ are served — never .env, .git or source code.
 # (On Vercel the CDN serves public/ directly; this is the local / fallback path.)
@@ -128,6 +129,11 @@ CREATE TABLE IF NOT EXISTS ai_usage (
 );
 ALTER TABLE users ADD COLUMN IF NOT EXISTS recovery_hash TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT;
+CREATE TABLE IF NOT EXISTS signup_log (
+    ip         TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS signup_log_ip_idx ON signup_log (ip, created_at);
 CREATE TABLE IF NOT EXISTS email_resets (
     user_id    BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     code_hash  TEXT NOT NULL,
@@ -154,10 +160,35 @@ CREATE TABLE IF NOT EXISTS study_rooms (
 
 pool: ConnectionPool | None = None
 startup_error = ""
+last_attempt = 0.0
+RETRY_SECONDS = 10  # after a failed start, try the database again on a request at most this often
+
+
+def connect():
+    """Open the pool and create the tables. Neon sleeps when idle, so the first try can time out: keep the error."""
+    global pool, startup_error, last_attempt
+    last_attempt = time.monotonic()
+    new = None
+    try:
+        # check_connection replaces connections that went stale while a serverless instance was idle
+        new = ConnectionPool(database_url(), min_size=1, max_size=5, open=True, timeout=20,
+                             check=ConnectionPool.check_connection)
+        with new.connection() as conn:
+            conn.execute(SCHEMA)
+        pool, startup_error = new, ""
+    except Exception as exc:
+        if new is not None:
+            new.close()
+        # never echo the password back
+        startup_error = re.sub(r"://[^@\s]*@", "://***@", f"{type(exc).__name__}: {exc}")
+        print("Database connection failed:", startup_error)
 
 
 def db():
-    """A pooled connection, or a readable 503 if the database never came up (instead of crashing the app)."""
+    """A pooled connection, or a readable 503 while the database is unreachable (instead of crashing the app).
+    A failed start is retried on later requests, so one slow wake-up doesn't break sign-in until the next deploy."""
+    if pool is None and time.monotonic() - last_attempt > RETRY_SECONDS:
+        connect()
     if pool is None:
         raise HTTPException(503, f"Database not connected: {startup_error}")
     return pool.connection()
@@ -165,20 +196,7 @@ def db():
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    global pool, startup_error
-    try:
-        # check_connection replaces connections that went stale while a serverless instance was idle
-        pool = ConnectionPool(database_url(), min_size=1, max_size=5, open=True, timeout=15,
-                              check=ConnectionPool.check_connection)
-        with db() as conn:
-            conn.execute(SCHEMA)
-    except Exception as exc:
-        if pool is not None:
-            pool.close()
-            pool = None
-        # never echo the password back
-        startup_error = re.sub(r"://[^@\s]*@", "://***@", f"{type(exc).__name__}: {exc}")
-        print("Database startup failed:", startup_error)
+    connect()
     yield
     if pool is not None:
         pool.close()
@@ -244,14 +262,20 @@ def health():
 
 
 @app.post("/api/signup")
-def signup(body: Credentials):
-    username = body.username.strip()
+def signup(body: Credentials, request: Request):
+    username, ip = body.username.strip(), client_ip(request)
     if not USERNAME_RE.match(username):
         raise HTTPException(400, "Username must be 3–30 letters, numbers, dots or underscores")
     if len(body.password) < 6:
         raise HTTPException(400, "Password must be at least 6 characters")
     email = clean_email(body.email)
     with db() as conn:
+        conn.execute("DELETE FROM signup_log WHERE created_at < now() - interval '1 day'")
+        recent = conn.execute(
+            "SELECT count(*) FROM signup_log WHERE ip = %s AND created_at > now() - interval '1 hour'", (ip,)
+        ).fetchone()[0]
+        if recent >= MAX_SIGNUPS_PER_HOUR:
+            raise HTTPException(429, "Too many new accounts from this internet connection. Please try again in an hour.")
         exists = conn.execute("SELECT 1 FROM users WHERE lower(username) = lower(%s)", (username,)).fetchone()
         if exists:
             raise HTTPException(409, "That username is taken — try another")
@@ -263,6 +287,7 @@ def signup(body: Credentials):
         except psycopg.errors.UniqueViolation:
             # "Ali" and "ali" signing up at the same moment: the lower(username) index lets only one through
             raise HTTPException(409, "That username is taken — try another") from None
+        conn.execute("INSERT INTO signup_log (ip) VALUES (%s)", (ip,))
         token = new_token(conn, user_id)
         code = new_recovery_code(conn, user_id)
     return {"token": token, "username": username, "recovery_code": code}
@@ -957,7 +982,7 @@ def assetlinks():
     return ASSETLINKS
 
 
-@app.get("/{name:path}")
+@app.api_route("/{name:path}", methods=["GET", "HEAD"])  # HEAD: the page checks the APK size
 def page(name: str):
     if name not in PUBLIC_FILES or not (PUBLIC / PUBLIC_FILES[name][0]).is_file():
         raise HTTPException(404, "Not found")
