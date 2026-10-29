@@ -635,7 +635,8 @@ def gemini_key() -> str:
     return key.strip()
 
 
-def gemini_request(path: str, payload: dict | None = None, timeout: int = 40) -> dict:
+def gemini_request(path: str, payload: dict | None = None, timeout: float = 40, network_errors: bool = False) -> dict:
+    """network_errors=True: a timeout or dropped connection raises GeminiError(504), so generate() tries the next model."""
     req = urllib.request.Request(
         f"{GEMINI_BASE}/{path}",
         data=json.dumps(payload).encode() if payload is not None else None,
@@ -653,6 +654,8 @@ def gemini_request(path: str, payload: dict | None = None, timeout: int = 40) ->
         raise GeminiError(err.code, detail) from None
     except (OSError, http.client.HTTPException) as err:  # URLError, timeouts, dropped connections
         print(f"Gemini network error on {path.split('?')[0]}: {err!r}")
+        if network_errors:
+            raise GeminiError(504, f"no answer in time ({type(err).__name__})") from None
         raise HTTPException(504, f"Study Buddy couldn't reach Google ({type(err).__name__}). Please try again.") from None
 
 
@@ -679,7 +682,8 @@ def gemini_models() -> list[str]:
         stable = [n for n in names if not re.search(r"image|tts|audio|live|exp|preview|thinking|\d{3}$", n)]
         flash = newest([n for n in stable if "flash" in n and "lite" not in n])
         lite = newest([n for n in stable if "flash-lite" in n])
-        chain = list(dict.fromkeys(flash[:2] + lite[:1] + flash[2:3])) or newest([n for n in names if "flash" in n])[:3]
+        # newest flash, then the newest flash-lite (fast, and usually free when the big one is overloaded), then older ones
+        chain = list(dict.fromkeys(flash[:1] + lite[:1] + flash[1:2] + lite[1:2])) or newest([n for n in names if "flash" in n])[:3]
         if not chain:
             raise HTTPException(503, "No Gemini model is available for this API key.")
         _gemini_models = chain
@@ -739,7 +743,7 @@ def ask(body: AskIn, user: dict = Depends(current_user)):
         "contents": contents,
         "generationConfig": {"temperature": 0.4, "maxOutputTokens": 1500},
     }
-    answer = answer_text(generate_counted(payload, user["id"]))
+    answer = answer_text(generate_counted(payload, user["id"], timeout=30))  # up to ~60 s across the backup models
     if not answer:
         answer = "I can't help with that one. Try asking about a chapter, a definition or a numerical from your syllabus."
     return {"answer": answer, "left": AI_DAILY_LIMIT - used}
@@ -1389,18 +1393,31 @@ def push_test(user: dict = Depends(current_user)):
     return {"sent": ok}
 
 
+_busy_until: dict[str, float] = {}  # model -> when to give it another go (this server instance)
+BUSY_SECONDS = 180
+
+
 def generate(payload: dict, timeout: int = 40) -> dict:
-    """Try each model in turn: when Google says one is overloaded (500/503) or out of quota (429), the next usually works."""
+    """Try each model in turn: when Google says one is overloaded (500/503), out of quota (429) or it doesn't answer in
+    time, the next usually works. A model that just failed goes to the back of the line for a few minutes, and the
+    whole request stops at about twice `timeout`, so a student never waits for every model to time out."""
     global _gemini_models
     busy = None
-    for model in gemini_models():
+    now = time.monotonic()
+    models = sorted(gemini_models(), key=lambda m: _busy_until.get(m, 0) > now)  # stable: healthy models first
+    deadline = now + min(timeout * 2, 250)  # Vercel stops a function at 300 s
+    for model in models:
+        left = deadline - time.monotonic()
+        if left < 5:
+            break
         try:
-            return gemini_request(f"models/{model}:generateContent", payload, timeout)
+            return gemini_request(f"models/{model}:generateContent", payload, min(timeout, left), network_errors=True)
         except GeminiError as err:
             # Vercel's runtime logs show this; the key is never part of Google's message
             print(f"Gemini error {err.status} on {model}: {err}")
-            if err.status in (404, 429, 500, 503):
+            if err.status in (404, 429, 500, 503, 504):
                 busy = err
+                _busy_until[model] = time.monotonic() + BUSY_SECONDS
                 if err.status == 404:
                     _gemini_models = []  # a model was retired; look the list up again next time
                 time.sleep(0.4)

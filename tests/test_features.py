@@ -173,3 +173,45 @@ def test_cron_needs_secret_and_sends(client, make_user, monkeypatch):
     assert r.json()["removed"] >= 1  # 410 = the browser unsubscribed, so it's deleted
     with srv.db() as conn:
         assert conn.execute("SELECT 1 FROM push_subs WHERE endpoint = %s", (endpoint,)).fetchone() is None
+
+
+# ---------- Gemini fallback (Study Buddy timing out when Google is overloaded) ----------
+def test_generate_moves_on_after_503_and_timeout(monkeypatch):
+    calls = []
+
+    def fake_request(path, payload=None, timeout=40, network_errors=False):
+        model = path.split("/")[1].split(":")[0]
+        calls.append((model, timeout))
+        if model == "big":
+            raise srv.GeminiError(503, "high demand")
+        if model == "older":
+            raise srv.GeminiError(504, "no answer in time (TimeoutError)")
+        return {"ok": model}
+
+    monkeypatch.setattr(srv, "gemini_models", lambda: ["big", "older", "lite"])
+    monkeypatch.setattr(srv, "gemini_request", fake_request)
+    monkeypatch.setattr(srv, "_busy_until", {})
+    monkeypatch.setattr(srv.time, "sleep", lambda s: None)
+    assert srv.generate({}, timeout=30) == {"ok": "lite"}
+    assert [m for m, _ in calls] == ["big", "older", "lite"]
+    # the two that failed wait at the back of the line for a while
+    calls.clear()
+    assert srv.generate({}, timeout=30) == {"ok": "lite"}
+    assert calls[0][0] == "lite"
+
+
+def test_generate_stops_at_its_time_budget(monkeypatch):
+    clock = [0.0]
+    monkeypatch.setattr(srv.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(srv.time, "sleep", lambda s: None)
+
+    def slow(path, payload=None, timeout=40, network_errors=False):
+        clock[0] += timeout  # every model takes its whole timeout, then gives up
+        raise srv.GeminiError(504, "no answer in time")
+
+    monkeypatch.setattr(srv, "gemini_models", lambda: ["a", "b", "c", "d"])
+    monkeypatch.setattr(srv, "gemini_request", slow)
+    monkeypatch.setattr(srv, "_busy_until", {})
+    with pytest.raises(srv.HTTPException) as e:
+        srv.generate({}, timeout=30)
+    assert e.value.status_code == 503 and clock[0] <= 60
