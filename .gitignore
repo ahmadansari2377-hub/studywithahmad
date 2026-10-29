@@ -17,3 +17,6 @@ wheels/
 
 # Android signing key (needed for app updates / Play Store) - never commit
 android-signing/
+
+# npm packages (installed locally, never committed)
+node_modules/
