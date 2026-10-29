@@ -1659,16 +1659,25 @@ if (token && !DEMO) {
 if (!A) {
   openStart();
 } else {
-  // Intro: book pages flip, name rises, curtain lifts, dashboard builds in
+  // Intro: photo wipes open, logo pops, name rises letter by letter while the counter runs, curtain lifts
   if (lenis) lenis.stop();
+  $$(".loader-logo > *").forEach((w) => { w.innerHTML = [...w.textContent].map((c) => `<span class="ch">${c}</span>`).join(""); });
   const bar = { v: 0 };
   gsap.timeline({ defaults: { ease: "expo.out" } })
-    .from(".loader-mark", { scale: 0, rotate: -140, duration: 1.1, ease: "back.out(1.8)" })
-    .from(".loader-mark .lm-star", { scale: 0, rotate: 180, transformOrigin: "50% 50%", duration: 0.8, ease: "back.out(3)" }, 0.5)
-    .from(".loader-logo > *", { yPercent: 120, opacity: 0, stagger: 0.1, duration: 1 }, 0.2)
-    .to(bar, { v: 1, duration: 1.3, ease: "power2.inOut", onUpdate: () => ($("#loaderBar").style.transform = `scaleX(${bar.v})`) }, 0.1)
-    .to(".loader-logo > *, .loader-mark, .loader-bar", { yPercent: -120, opacity: 0, stagger: 0.05, duration: 0.6, ease: "power3.in" })
-    .fromTo("#loader", { clipPath: "circle(150% at 50% 50%)" }, { clipPath: "circle(0% at 50% 50%)", duration: 1.1, ease: "expo.inOut" }, "-=0.2")
+    .fromTo("#loaderPhoto", { clipPath: "inset(100% 0% 0% 0% round 24px)" }, { clipPath: "inset(0% 0% 0% 0% round 24px)", duration: 1.1, ease: "expo.inOut" })
+    .fromTo("#loaderPhoto img", { scale: 2, transformOrigin: "50% 30%" }, { scale: 1.35, duration: 1.6, ease: "power3.out" }, 0)
+    .from("#loaderPhoto", { y: 60, rotate: -6, duration: 1.4 }, 0)
+    .from(".loader-mark", { scale: 0, rotate: -140, duration: 1, ease: "back.out(1.8)" }, 0.6)
+    .from(".loader-mark .lm-star", { scale: 0, rotate: 180, transformOrigin: "50% 50%", duration: 0.8, ease: "back.out(3)" }, 0.9)
+    .from(".loader-logo .ch", { yPercent: 110, rotate: 12, opacity: 0, stagger: 0.035, duration: 0.9 }, 0.7)
+    .to(bar, { v: 1, duration: 1.9, ease: "power2.inOut", onUpdate: () => {
+      $("#loaderBar").style.transform = `scaleX(${bar.v})`;
+      $("#loaderCount").textContent = Math.round(bar.v * 100);
+    } }, 0.1)
+    .to(".loader-logo .ch", { yPercent: -110, opacity: 0, stagger: 0.015, duration: 0.5, ease: "power3.in" })
+    .to(".loader-mark, .loader-bar, .loader-count", { opacity: 0, y: -30, duration: 0.4, ease: "power3.in" }, "<")
+    .to("#loaderPhoto", { scale: 0.6, y: -40, opacity: 0, duration: 0.6, ease: "power3.in" }, "<0.1")
+    .to("#loader", { clipPath: "inset(0% 0% 100% 0%)", duration: 0.9, ease: "expo.inOut" }, "-=0.25")
     .set("#loader", { display: "none" })
     .from(".header-inner > *, .nav a", { y: -30, opacity: 0, stagger: 0.04, duration: 0.9 }, "-=0.6")
     .from(".blob", { scale: 0, duration: 2.2, stagger: 0.15 }, "<")

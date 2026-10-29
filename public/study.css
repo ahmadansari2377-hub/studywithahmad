@@ -155,6 +155,12 @@ textarea.input { height: auto; padding: 12px 14px; resize: vertical; }
 .loader-logo em { font-style: normal; color: var(--sun); }
 .loader-bar { width: min(260px, 60vw); height: 4px; border-radius: 4px; background: rgba(255, 255, 255, 0.25); overflow: hidden; }
 .loader-bar i { display: block; height: 100%; background: #fff; transform: scaleX(0); transform-origin: left; }
+/* Photo card that wipes open, plus a big 0-100 counter in the corner */
+.loader-photo { position: relative; width: min(200px, 44vw); aspect-ratio: 3 / 4; border-radius: 24px; overflow: hidden; box-shadow: 0 30px 70px rgba(0, 0, 0, 0.35); outline: 3px solid rgba(255, 255, 255, 0.5); outline-offset: 5px; }
+.loader-photo img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 22%; display: block; }
+.loader-photo + .loader-mark { position: relative; z-index: 1; width: 64px; height: 64px; margin-top: -52px; }
+.loader-logo .ch { display: inline-block; }
+.loader-count { position: absolute; right: 24px; bottom: 16px; font-family: var(--display); font-weight: 800; font-size: clamp(56px, 12vw, 140px); line-height: 1; opacity: 0.18; font-variant-numeric: tabular-nums; }
 
 .progress { position: fixed; top: 0; left: 0; right: 0; z-index: 100; height: 3px; background: linear-gradient(90deg, var(--primary), var(--coral), var(--sun)); transform: scaleX(0); transform-origin: left; }
 .confetti { position: fixed; inset: 0; z-index: 150; pointer-events: none; }
