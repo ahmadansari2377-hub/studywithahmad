@@ -152,6 +152,34 @@ const BOARDS = {
   ptb: { name: "Punjab Board", short: "PTB", books: "https://pctb.punjab.gov.pk/", booksLabel: "pctb.punjab.gov.pk", syllabus: SYLLABUS_PTB, compulsory: COMPULSORY_PTB },
   fbise: { name: "Federal Board", short: "FBISE", books: "https://www.fbise.edu.pk/syllabus.php", booksLabel: "fbise.edu.pk", syllabus: SYLLABUS_FBISE, compulsory: COMPULSORY_FBISE },
 };
+// ---------- Arts / Humanities ----------
+// Punjab changed the Matric Arts scheme in 2025 (one Mathematics book for every group, no separate General Science book),
+// and the new elective books' contents aren't published anywhere official yet. So Arts students pick their electives and
+// type each book's chapters from its contents page (saved in state.books). Computer Science uses the real book above.
+const ELECTIVES = {
+  "el-civics": { name: "Civics", color: "#c2410c" },
+  "el-economics": { name: "Economics", color: "#0e7490" },
+  "el-education": { name: "Education", color: "#7c3aed" },
+  "el-psychology": { name: "Psychology", color: "#db2777" },
+  "el-sociology": { name: "Sociology", color: "#4d7c0f" },
+  "el-history": { name: "History", color: "#a16207" },
+  "el-geography": { name: "Geography", color: "#15803d" },
+  "el-islamic": { name: "Islamic Studies (Elective)", color: "#0f766e", rtl: true },
+  "el-statistics": { name: "Statistics", color: "#1d4ed8" },
+  "el-gscience": { name: "General Science", color: "#16a34a" },
+  "el-gmaths": { name: "General Mathematics", color: "#ca8a04" },
+  "el-health": { name: "Health & Physical Education", color: "#dc2626" },
+  "el-food": { name: "Food & Nutrition", color: "#ea580c" },
+  "el-finearts": { name: "Fine Arts", color: "#9333ea" },
+  "el-punjabi": { name: "Punjabi", color: "#b45309" },
+  "el-persian": { name: "Persian", color: "#6d28d9", rtl: true },
+  "el-arabic": { name: "Arabic", color: "#047857", rtl: true },
+};
+Object.assign(SUBJECT_INFO, ELECTIVES);
+const ELECTIVE_CHOICES = ["computer", ...Object.keys(ELECTIVES)];
+GROUPS.matric.push({ id: "arts", name: "Arts / Humanities", subjects: ["maths"], custom: true });
+GROUPS.inter.push({ id: "arts", name: "Arts / Humanities (FA)", subjects: [], custom: true });
+
 // The active board's books; study.js switches this when the student picks a board
 let SYLLABUS = SYLLABUS_PTB, COMPULSORY = COMPULSORY_PTB;
 

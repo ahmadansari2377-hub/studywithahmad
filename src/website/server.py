@@ -4,6 +4,7 @@ Run locally with:  uv run website   →  http://127.0.0.1:8000
 On Vercel, app.py at the project root exposes this `app`, and files in public/ come from the CDN.
 """
 
+import base64
 import datetime as dt
 import hashlib
 import hmac
@@ -20,6 +21,11 @@ from contextlib import asynccontextmanager
 from email.message import EmailMessage
 from pathlib import Path
 
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import FileResponse
 import psycopg
@@ -50,6 +56,8 @@ PUBLIC_FILES = {
     "solver.js": ("solver.js", "text/javascript"),
     "privacy": ("privacy.html", "text/html"),
     "privacy.html": ("privacy.html", "text/html"),
+    "parent": ("parent.html", "text/html"),
+    "parent.html": ("parent.html", "text/html"),
     "sw.js": ("sw.js", "text/javascript"),
     "manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
     "icons/icon-192.png": ("icons/icon-192.png", "image/png"),
@@ -155,6 +163,18 @@ CREATE TABLE IF NOT EXISTS study_rooms (
     room     TEXT NOT NULL,
     subject  TEXT NOT NULL DEFAULT '',
     ends_at  TIMESTAMPTZ NOT NULL
+);
+CREATE TABLE IF NOT EXISTS parent_links (
+    user_id    BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    token_hash TEXT NOT NULL UNIQUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS push_subs (
+    endpoint   TEXT PRIMARY KEY,
+    user_id    BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    p256dh     TEXT NOT NULL,
+    auth       TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 """
 
@@ -949,6 +969,424 @@ def leaderboard(cls: str = "", city: str = "", authorization: str = Header(defau
     board = [{"rank": i + 1, "username": r[1], "cls": r[2], "city": (r[3] or "")[:30], "minutes": r[4], "me": r[0] == me_id}
              for i, r in enumerate(rows)]
     return {"week_of": monday, "top": board[:20], "me": next((b for b in board if b["me"]), None)}
+
+
+@app.get("/api/leaderboard/cities")
+def city_board():
+    """This week's weekly challenge, city against city: focus minutes of opted-in students, added up per city."""
+    today = dt.datetime.now(dt.timezone(dt.timedelta(hours=5))).date()
+    monday = (today - dt.timedelta(days=today.weekday())).isoformat()
+    with db() as conn:
+        rows = conn.execute(
+            """SELECT initcap(lower(trim(p.data->'settings'->>'city'))) AS city, count(DISTINCT p.user_id),
+                      COALESCE(SUM((s->>'min')::int), 0) AS mins
+               FROM planner_data p
+               LEFT JOIN LATERAL jsonb_array_elements(
+                   CASE WHEN jsonb_typeof(p.data->'sessions') = 'array' THEN p.data->'sessions' ELSE '[]'::jsonb END) s
+                 ON s->>'date' >= %s AND s->>'date' <= to_char(now() AT TIME ZONE 'Asia/Karachi', 'YYYY-MM-DD')
+                    AND COALESCE(s->>'sample', 'false') <> 'true' AND (s->>'min') ~ '^[0-9]{1,3}$'
+               WHERE p.data->'settings'->>'board' = 'true' AND trim(COALESCE(p.data->'settings'->>'city', '')) <> ''
+               GROUP BY 1 ORDER BY mins DESC LIMIT 10""",
+            (monday,),
+        ).fetchall()
+    return {"week_of": monday, "cities": [{"city": r[0][:30], "students": r[1], "minutes": r[2]} for r in rows]}
+
+
+# ---------- AI tools that answer in JSON: paper checker, book page -> cards, practice paper ----------
+def image_part(data_url: str) -> dict:
+    m = IMAGE_RE.match(data_url)
+    if not m or len(m.group(2)) > 3_000_000:
+        raise HTTPException(400, "That photo couldn't be read. Try a smaller JPG or PNG.")
+    return {"inlineData": {"mimeType": m.group(1), "data": m.group(2)}}
+
+
+def clean_text(s: str, n: int) -> str:
+    return re.sub(r"[\x00-\x08\x0b-\x1f]", "", s).strip()[:n]
+
+
+def ai_json(prompt: str, user_id: int, images: list[dict] | None = None, timeout: int = 60) -> tuple[dict, int]:
+    """Ask Gemini for a JSON answer; returns (data, questions left today). A garbled answer doesn't count."""
+    used = use_ai(user_id)
+    payload = {
+        "contents": [{"role": "user", "parts": (images or []) + [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0.3, "maxOutputTokens": 8000, "responseMimeType": "application/json"},
+    }
+    raw = answer_text(generate_counted(payload, user_id, timeout))
+    try:
+        data = json.loads(raw[raw.index("{"):raw.rindex("}") + 1])
+        if not isinstance(data, dict):
+            raise ValueError
+    except ValueError:
+        with db() as conn:
+            conn.execute("UPDATE ai_usage SET count = count - 1 WHERE user_id = %s AND day = CURRENT_DATE", (user_id,))
+        raise HTTPException(502, "The AI's answer came back garbled. Please try again.") from None
+    return data, AI_DAILY_LIMIT - used
+
+
+def str_list(value, n: int, size: int = 300) -> list[str]:
+    return [str(x)[:size] for x in value[:n]] if isinstance(value, list) else []
+
+
+def clean_mcqs(value, n: int) -> list[dict]:
+    out = []
+    for m in value[:n] if isinstance(value, list) else []:
+        opts = m.get("options") if isinstance(m, dict) else None
+        try:
+            answer = int(m.get("answer"))
+        except (TypeError, ValueError):
+            continue
+        if isinstance(opts, list) and len(opts) == 4 and 0 <= answer <= 3 and m.get("q"):
+            out.append({"q": str(m["q"])[:400], "options": [str(o)[:160] for o in opts], "answer": answer, "why": str(m.get("why", ""))[:300]})
+    return out
+
+
+CHECK_PROMPT = """You are an experienced Pakistani board examiner ({level}) marking a student's answer{subject}.
+Question ({marks} marks): {question}
+The student's answer is {where}.
+
+Mark it exactly as a real board examiner would with the marking scheme: key points, correct definitions, diagrams and
+labels, steps and units in numericals, the final answer. Half marks are allowed. Do not be generous; do not be harsh.
+Reply with JSON only, shaped exactly:
+{{"score": 3.5, "out_of": {marks}, "summary": "one-line verdict", "good": ["what earned marks"],
+"missing": ["points or steps that were missing"], "mistakes": ["wrong facts, units or terms"],
+"improve": "how to write it for full marks, in 1-2 sentences", "key_points": ["the points a full-marks answer needs"]}}
+Write the feedback in {language}. If the answer is unreadable or not an answer to this question, give 0 and say why in summary."""
+
+
+class CheckIn(BaseModel):
+    question: str = ""
+    question_image: str = ""
+    answer: str = ""
+    answer_image: str = ""
+    marks: int = 5
+    level: str = ""
+    subject: str = ""
+    language: str = "en"
+
+
+@app.post("/api/check")
+def check_answer(body: CheckIn, user: dict = Depends(current_user)):
+    """Paper checker: marks a written answer (typed, or a photo of the answer sheet) out of the question's marks."""
+    question, answer = clean_text(body.question, 1500), clean_text(body.answer, 4000)
+    if not question and not body.question_image:
+        raise HTTPException(400, "Type the question (or add a photo of it) first")
+    if not answer and not body.answer_image:
+        raise HTTPException(400, "Add your answer: type it, or take a photo of your answer sheet")
+    marks = max(1, min(body.marks, 20))
+    images = []
+    if body.question_image:
+        images.append(image_part(body.question_image))
+    if body.answer_image:
+        images.append(image_part(body.answer_image))
+    where = ("in the photo" + (" (the last photo; the first is the question)" if body.question_image else "")) if body.answer_image else f"typed below:\n\"\"\"\n{answer}\n\"\"\""
+    if not question:
+        question = "(see the first photo)"
+    data, left = ai_json(CHECK_PROMPT.format(
+        level=re.sub(r"[^\w .(),-]", "", body.level)[:80] or "Matric/Inter", marks=marks, question=question, where=where,
+        subject=f" in {re.sub(r'[^\w .()&-]', '', body.subject)[:40]}" if body.subject else "",
+        language=LANGUAGES.get(body.language, "English")), user["id"], images, timeout=80)
+    try:
+        score = max(0.0, min(float(data.get("score", 0)), marks))
+    except (TypeError, ValueError):
+        score = 0.0
+    return {
+        "score": round(score * 2) / 2, "out_of": marks, "summary": str(data.get("summary", ""))[:300],
+        "good": str_list(data.get("good"), 6), "missing": str_list(data.get("missing"), 6),
+        "mistakes": str_list(data.get("mistakes"), 6), "improve": str(data.get("improve", ""))[:500],
+        "key_points": str_list(data.get("key_points"), 8), "left": left,
+    }
+
+
+CARDS_PROMPT = """This is a photo of a page from a {level} textbook{subject} (Pakistan). Using ONLY what is on this page, make:
+- 6 to 8 flashcards: a short question on the front, a short exact answer (under 30 words) on the back;
+- 8 to 10 board-style MCQs with 4 options each, the index (0-3) of the right option, and a one-line reason.
+Reply with JSON only, shaped exactly:
+{{"topic": "what the page is about", "cards": [{{"front": "...", "back": "..."}}],
+"mcqs": [{{"q": "...", "options": ["...", "...", "...", "..."], "answer": 1, "why": "..."}}]}}
+Write in {language}, but keep scientific terms as they are in the book. If the photo is not a readable textbook page,
+reply {{"error": "what is wrong with the photo"}}."""
+
+
+class CardsIn(BaseModel):
+    image: str
+    level: str = ""
+    subject: str = ""
+    language: str = "en"
+
+
+@app.post("/api/cards")
+def page_to_cards(body: CardsIn, user: dict = Depends(current_user)):
+    """Photo of a book page -> flashcards + MCQs from that page only."""
+    image = image_part(body.image)
+    data, left = ai_json(CARDS_PROMPT.format(
+        level=re.sub(r"[^\w .(),-]", "", body.level)[:80] or "Matric/Inter",
+        subject=f" ({re.sub(r'[^\w .()&-]', '', body.subject)[:40]})" if body.subject else "",
+        language=LANGUAGES.get(body.language, "English")), user["id"], [image], timeout=80)
+    cards = [{"front": str(c.get("front", ""))[:300], "back": str(c.get("back", ""))[:400]}
+             for c in (data.get("cards") or [])[:10] if isinstance(c, dict) and c.get("front") and c.get("back")]
+    mcqs = clean_mcqs(data.get("mcqs"), 12)
+    if not cards and not mcqs:
+        raise HTTPException(422, str(data.get("error") or "Couldn't read that page. Take the photo straight on, in good light."))
+    return {"topic": str(data.get("topic", ""))[:120], "cards": cards, "mcqs": mcqs, "left": left}
+
+
+PAPER_PROMPT = """Write a {kind} PRACTICE paper in the {board} board pattern for a {level} student, subject {subject},
+covering only these chapters: {chapters}.
+{shape}
+Questions must look and feel like real board papers (same wording style, mix of easy and hard), but they are
+practice questions: never say they are from a real past paper or a particular year.
+For every short and long question give the key points a full-marks answer needs.
+Reply with JSON only, shaped exactly:
+{{"title": "...", "minutes": {minutes}, "mcqs": [{{"q": "...", "options": ["...", "...", "...", "..."], "answer": 0, "why": "..."}}],
+"short": [{{"q": "...", "marks": 2, "answer": "key points"}}], "long": [{{"q": "...", "marks": 8, "answer": "key points"}}]}}
+Write in {language}, keeping scientific terms in English."""
+PAPER_SHAPES = {
+    "quick": ("short", 40, "Make 8 MCQs (1 mark each), 5 short questions (2 marks each) and 1 long question (8 marks)."),
+    "full": ("full-length", 150, "Make 15 MCQs (1 mark each), 12 short questions (2 marks each) and 3 long questions (8-9 marks each, may have parts a and b)."),
+}
+
+
+class PaperIn(BaseModel):
+    subject: str
+    chapters: list[str] = []
+    kind: str = "quick"
+    level: str = ""
+    board: str = "Punjab"
+    language: str = "en"
+
+
+@app.post("/api/paper")
+def practice_paper(body: PaperIn, user: dict = Depends(current_user)):
+    kind, minutes, shape = PAPER_SHAPES.get(body.kind, PAPER_SHAPES["quick"])
+    subject = re.sub(r"[^\w .()&-]", "", body.subject)[:40]
+    if not subject:
+        raise HTTPException(400, "Pick a subject")
+    chapters = "; ".join(clean_text(c, 80) for c in body.chapters[:30]) or "the whole book"
+    data, left = ai_json(PAPER_PROMPT.format(
+        kind=kind, board="Federal (FBISE)" if "federal" in body.board.lower() else "Punjab (BISE)",
+        level=re.sub(r"[^\w .(),-]", "", body.level)[:80] or "Matric/Inter", subject=subject, chapters=chapters,
+        shape=shape, minutes=minutes, language=LANGUAGES.get(body.language, "English")), user["id"], timeout=110)
+
+    def written(value, n):
+        out = []
+        for q in value[:n] if isinstance(value, list) else []:
+            if isinstance(q, dict) and q.get("q"):
+                try:
+                    marks = max(1, min(int(q.get("marks") or 2), 20))
+                except (TypeError, ValueError):
+                    marks = 2
+                out.append({"q": str(q["q"])[:600], "marks": marks, "answer": str(q.get("answer", ""))[:800]})
+        return out
+
+    paper = {"title": str(data.get("title") or f"{subject} practice paper")[:120], "minutes": minutes,
+             "mcqs": clean_mcqs(data.get("mcqs"), 20), "short": written(data.get("short"), 15), "long": written(data.get("long"), 4)}
+    if not (paper["mcqs"] or paper["short"]):
+        raise HTTPException(502, "The AI couldn't make a paper this time. Please try again.")
+    return {**paper, "left": left}
+
+
+# ---------- Parent link: a read-only progress page a student can send to their family ----------
+@app.post("/api/parent-link")
+def make_parent_link(user: dict = Depends(current_user)):
+    """A new link replaces the old one, so a student can always cut off a link they shared."""
+    token = secrets.token_urlsafe(18)
+    with db() as conn:
+        conn.execute(
+            """INSERT INTO parent_links (user_id, token_hash) VALUES (%s, %s)
+               ON CONFLICT (user_id) DO UPDATE SET token_hash = EXCLUDED.token_hash, created_at = now()""",
+            (user["id"], token_hash(token)),
+        )
+    return {"token": token}
+
+
+@app.get("/api/parent-link")
+def parent_link_status(user: dict = Depends(current_user)):
+    with db() as conn:
+        row = conn.execute("SELECT created_at FROM parent_links WHERE user_id = %s", (user["id"],)).fetchone()
+    return {"active": bool(row), "created_at": row[0].isoformat() if row else None}
+
+
+@app.delete("/api/parent-link")
+def stop_parent_link(user: dict = Depends(current_user)):
+    with db() as conn:
+        conn.execute("DELETE FROM parent_links WHERE user_id = %s", (user["id"],))
+    return {"ok": True}
+
+
+@app.get("/api/parent/{token}")
+def parent_view(token: str):
+    """What a parent sees: the summary the student's app saves with the planner (no tasks text, notes or chats)."""
+    with db() as conn:
+        row = conn.execute(
+            """SELECT u.username, p.data->'share', p.updated_at FROM parent_links l JOIN users u ON u.id = l.user_id
+               LEFT JOIN planner_data p ON p.user_id = l.user_id WHERE l.token_hash = %s""",
+            (token_hash(token[:64]),),
+        ).fetchone()
+    if not row:
+        raise HTTPException(404, "This link has been switched off. Ask for a new one.")
+    return {"username": row[0], "share": row[1] or {}, "updated_at": row[2].isoformat() if row[2] else None}
+
+
+# ---------- Reminders by push notification (Web Push, VAPID; works on Android and desktop, iPhone once installed) ----------
+# VAPID_PRIVATE_KEY = the 32-byte private key, base64url (make one with `uv run vapid-key`). A Vercel cron calls
+# /api/cron/remind once a day with CRON_SECRET; each student gets one short nudge if something needs them.
+def b64u(b: bytes) -> str:
+    return base64.urlsafe_b64encode(b).rstrip(b"=").decode()
+
+
+def b64u_dec(s: str) -> bytes:
+    return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
+
+
+def vapid_key():
+    raw = os.environ.get("VAPID_PRIVATE_KEY", "").strip()
+    if not raw:
+        return None
+    return ec.derive_private_key(int.from_bytes(b64u_dec(raw), "big"), ec.SECP256R1())
+
+
+def vapid_public(key) -> str:
+    return b64u(key.public_key().public_bytes(serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint))
+
+
+def make_vapid():
+    """`uv run vapid-key`: prints a new VAPID_PRIVATE_KEY for the Vercel settings."""
+    key = ec.generate_private_key(ec.SECP256R1())
+    print("VAPID_PRIVATE_KEY=" + b64u(key.private_numbers().private_value.to_bytes(32, "big")))
+    print("(public key, for reference: " + vapid_public(key) + ")")
+
+
+def push_encrypt(p256dh: str, auth_secret: str, payload: bytes) -> bytes:
+    """RFC 8291 (aes128gcm) message encryption."""
+    ua_pub = b64u_dec(p256dh)
+    server = ec.generate_private_key(ec.SECP256R1())
+    as_pub = server.public_key().public_bytes(serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)
+    shared = server.exchange(ec.ECDH(), ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256R1(), ua_pub))
+    ikm = HKDF(hashes.SHA256(), 32, salt=b64u_dec(auth_secret), info=b"WebPush: info\x00" + ua_pub + as_pub).derive(shared)
+    salt = secrets.token_bytes(16)
+    cek = HKDF(hashes.SHA256(), 16, salt=salt, info=b"Content-Encoding: aes128gcm\x00").derive(ikm)
+    nonce = HKDF(hashes.SHA256(), 12, salt=salt, info=b"Content-Encoding: nonce\x00").derive(ikm)
+    body = AESGCM(cek).encrypt(nonce, payload + b"\x02", None)
+    return salt + (4096).to_bytes(4, "big") + bytes([len(as_pub)]) + as_pub + body
+
+
+def send_push(sub: dict, message: dict) -> int:
+    """Send one notification; returns the push service's HTTP status (404/410 = the subscription is gone)."""
+    key = vapid_key()
+    endpoint = sub["endpoint"]
+    aud = "/".join(endpoint.split("/")[:3])
+    head = b64u(json.dumps({"typ": "JWT", "alg": "ES256"}).encode())
+    claims = b64u(json.dumps({"aud": aud, "exp": int(time.time()) + 12 * 3600, "sub": "https://study-with-ahmad.vercel.app"}).encode())
+    r, s = decode_dss_signature(key.sign(f"{head}.{claims}".encode(), ec.ECDSA(hashes.SHA256())))
+    jwt = f"{head}.{claims}.{b64u(r.to_bytes(32, 'big') + s.to_bytes(32, 'big'))}"
+    req = urllib.request.Request(endpoint, data=push_encrypt(sub["p256dh"], sub["auth"], json.dumps(message).encode()), headers={
+        "TTL": "43200", "Urgency": "normal", "Content-Encoding": "aes128gcm", "Content-Type": "application/octet-stream",
+        "Authorization": f"vapid t={jwt}, k={vapid_public(key)}",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=15) as res:
+            return res.status
+    except urllib.error.HTTPError as err:
+        return err.code
+    except (OSError, http.client.HTTPException):
+        return 0
+
+
+class PushSub(BaseModel):
+    endpoint: str
+    keys: dict
+
+
+@app.get("/api/push/key")
+def push_key():
+    key = vapid_key()
+    return {"key": vapid_public(key) if key else ""}
+
+
+@app.post("/api/push/subscribe")
+def push_subscribe(body: PushSub, user: dict = Depends(current_user)):
+    if not vapid_key():
+        raise HTTPException(503, "Reminders aren't switched on yet (the site owner needs to add VAPID_PRIVATE_KEY).")
+    p256dh, auth_key = str(body.keys.get("p256dh", "")), str(body.keys.get("auth", ""))
+    if not body.endpoint.startswith("https://") or len(body.endpoint) > 800 or not p256dh or not auth_key:
+        raise HTTPException(400, "That browser's push subscription looks wrong")
+    with db() as conn:
+        conn.execute(
+            """INSERT INTO push_subs (endpoint, user_id, p256dh, auth) VALUES (%s, %s, %s, %s)
+               ON CONFLICT (endpoint) DO UPDATE SET user_id = EXCLUDED.user_id, p256dh = EXCLUDED.p256dh, auth = EXCLUDED.auth""",
+            (body.endpoint, user["id"], p256dh[:200], auth_key[:100]),
+        )
+    return {"ok": True}
+
+
+class PushEnd(BaseModel):
+    endpoint: str
+
+
+@app.post("/api/push/unsubscribe")
+def push_unsubscribe(body: PushEnd, user: dict = Depends(current_user)):
+    with db() as conn:
+        conn.execute("DELETE FROM push_subs WHERE endpoint = %s AND user_id = %s", (body.endpoint, user["id"]))
+    return {"ok": True}
+
+
+def reminder_for(share: dict, today: str) -> dict | None:
+    """The one most useful nudge for today, from the summary the app saved (or None: nothing to say)."""
+    if not isinstance(share, dict):
+        return None
+    dates = lambda k: [d for d in share.get(k) or [] if isinstance(d, str)]
+    revisions = sum(1 for d in dates("due") if d <= today)
+    tasks = sum(1 for d in dates("tasksDue") if d <= today)
+    streak = share.get("streak") if isinstance(share.get("streak"), int) else 0
+    if streak >= 2 and str(share.get("lastDay", "")) < today:
+        return {"title": f"🔥 {streak}-day streak!", "body": "Aaj thori si parhai karo, warna streak toot jayegi. 25 minutes kaafi hain."}
+    if revisions:
+        return {"title": "📖 Nazar-e-Saani", "body": f"{revisions} chapter{'s' if revisions > 1 else ''} ki revision due hai. Abhi 10 minute do, yaad pakka ho jayega."}
+    if tasks:
+        return {"title": "✅ Aaj ke kaam", "body": f"{tasks} task{'s' if tasks > 1 else ''} due {'hain' if tasks > 1 else 'hai'}. Ek ek kar ke khatam karo!"}
+    return None
+
+
+@app.get("/api/cron/remind")
+def cron_remind(authorization: str = Header(default="")):
+    secret = os.environ.get("CRON_SECRET", "").strip()
+    if not secret or not hmac.compare_digest(authorization, f"Bearer {secret}"):
+        raise HTTPException(401, "Not allowed")
+    if not vapid_key():
+        return {"sent": 0, "note": "VAPID_PRIVATE_KEY is not set"}
+    today = dt.datetime.now(dt.timezone(dt.timedelta(hours=5))).date().isoformat()
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT s.endpoint, s.p256dh, s.auth, p.data->'share' FROM push_subs s LEFT JOIN planner_data p ON p.user_id = s.user_id"
+        ).fetchall()
+    sent, gone = 0, []
+    for endpoint, p256dh, auth_key, share in rows:
+        msg = reminder_for(share or {}, today)
+        if not msg:
+            continue
+        status = send_push({"endpoint": endpoint, "p256dh": p256dh, "auth": auth_key}, {**msg, "url": "/#top"})
+        if status in (404, 410):
+            gone.append(endpoint)
+        elif 200 <= status < 300:
+            sent += 1
+    if gone:
+        with db() as conn:
+            conn.execute("DELETE FROM push_subs WHERE endpoint = ANY(%s)", (gone,))
+    return {"sent": sent, "removed": len(gone)}
+
+
+@app.post("/api/push/test")
+def push_test(user: dict = Depends(current_user)):
+    if not vapid_key():
+        raise HTTPException(503, "Reminders aren't switched on yet (the site owner needs to add VAPID_PRIVATE_KEY).")
+    with db() as conn:
+        rows = conn.execute("SELECT endpoint, p256dh, auth FROM push_subs WHERE user_id = %s", (user["id"],)).fetchall()
+    ok = sum(200 <= send_push({"endpoint": e, "p256dh": p, "auth": a},
+                              {"title": "Study with Ahmad", "body": "Reminders are on! ✅ Roz shaam ko ek chhota sa nudge aayega.", "url": "/#top"}) < 300
+             for e, p, a in rows)
+    if not ok:
+        raise HTTPException(502, "Couldn't send a test notification. Try switching reminders off and on again.")
+    return {"sent": ok}
 
 
 def generate(payload: dict, timeout: int = 40) -> dict:

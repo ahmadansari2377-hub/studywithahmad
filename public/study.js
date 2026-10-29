@@ -70,7 +70,17 @@ function saveLocal() { try { localStorage.setItem(KEY, JSON.stringify(state)); }
 // "dirty" = this device has changes the cloud hasn't got yet (e.g. made offline)
 const markDirty = (on) => { try { on ? localStorage.setItem("swa-dirty", "1") : localStorage.removeItem("swa-dirty"); } catch (e) {} };
 const isDirty = () => { try { return !!localStorage.getItem("swa-dirty"); } catch (e) { return false; } };
-function save() { saveLocal(); if (token) { markDirty(true); scheduleSync(); } else maybeNudge(); }
+// Demo mode (a link with ?demo, or "Try a demo"): a ready-made student for judges and visitors, never saved anywhere
+let DEMO = (() => { try { if (/[?&]demo\b/.test(location.search)) sessionStorage.setItem("swa-demo", "1"); return sessionStorage.getItem("swa-demo") === "1"; } catch (e) { return false; } })();
+function save() {
+  if (DEMO) return;
+  try {
+    if (state.profile) checkBadges(!state.badges); // the first check (older planners) is silent
+    state.share = shareSummary(); // what the parent link and the reminders read
+  } catch (e) {}
+  saveLocal();
+  if (token) { markDirty(true); scheduleSync(); } else maybeNudge();
+}
 
 // ---------- Cloud database (needs the Study with Ahmad server: `uv run website`) ----------
 const CLOUD = location.protocol.startsWith("http");
@@ -174,6 +184,11 @@ function useBoard() {
   const b = boardOf();
   SYLLABUS = b.syllabus;
   COMPULSORY = b.compulsory;
+  // Arts electives: chapters the student typed from their own book
+  const p = state.profile;
+  if (p) (p.electives || []).filter((id) => id.startsWith("el-")).forEach((id) => {
+    SYLLABUS[p.cls][id] = { start: 1, chapters: (state.books || {})[`${p.cls}-${id}`] || [], custom: true };
+  });
   const link = $("#bookLink");
   if (link) {
     link.href = b.books;
@@ -183,7 +198,10 @@ function useBoard() {
   return b;
 }
 const levelText = () => `Class ${state.profile.cls}, ${boardOf().name} (${groupOf().name})`;
-function groupOf(p = state.profile) { return p && GROUPS[levelOf(p.cls)].find((g) => g.id === p.group); }
+function groupOf(p = state.profile) {
+  const g = p && GROUPS[levelOf(p.cls)].find((x) => x.id === p.group);
+  return g && g.custom ? { ...g, subjects: [...g.subjects, ...(p.electives || [])] } : g; // Arts: + the chosen electives
+}
 function subjects() {
   const g = groupOf();
   const core = g ? g.subjects : [];
@@ -282,20 +300,45 @@ function renderSetup() {
   const groups = pick.cls ? GROUPS[levelOf(pick.cls)] : [];
   if (pick.cls && !groups.some((g) => g.id === pick.group)) pick.group = null;
   $("#groupChoices").innerHTML = groups.map((g) => `
-    <button data-group="${g.id}" class="${g.id === pick.group ? "active" : ""}"><b>${g.name}</b><small>${g.subjects.map((s) => SUBJECT_INFO[s].name).join(" · ")}</small></button>`).join("");
+    <button data-group="${g.id}" class="${g.id === pick.group ? "active" : ""}"><b>${g.name}</b><small>${g.custom ? [...g.subjects.map((s) => SUBJECT_INFO[s].name), "your electives"].join(" · ") : g.subjects.map((s) => SUBJECT_INFO[s].name).join(" · ")}</small></button>`).join("");
   if (A && groups.length) gsap.from($$("#groupChoices button"), { y: 16, opacity: 0, stagger: 0.06, duration: 0.6, ease: "expo.out" });
-  $("#setupDone").disabled = !(pick.cls && pick.group);
+  renderElectives();
+  const ready = !!(pick.cls && pick.group && (!isCustomPick() || pick.electives?.length));
+  $("#setupDone").disabled = !ready;
   $("#stepClassNext").disabled = !pick.cls;
-  $("#stepGroupNext").disabled = !(pick.cls && pick.group);
+  $("#stepGroupNext").disabled = !ready;
 }
+const isCustomPick = () => !!(pick.cls && GROUPS[levelOf(pick.cls)].find((g) => g.id === pick.group)?.custom);
+function renderElectives() {
+  const on = isCustomPick();
+  $("#electives").hidden = !on;
+  if (!on) return;
+  pick.electives = (pick.electives || []).filter((id) => ELECTIVE_CHOICES.includes(id));
+  $("#electiveChoices").innerHTML = ELECTIVE_CHOICES.map((id) => `<button type="button" data-el="${id}" class="${pick.electives.includes(id) ? "active" : ""}" style="--c:${SUBJECT_INFO[id].color}"><i class="dot"></i>${esc(SUBJECT_INFO[id].name)}</button>`).join("");
+}
+$("#electiveChoices").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-el]");
+  if (!b) return;
+  const id = b.dataset.el, list = (pick.electives ||= []);
+  if (list.includes(id)) list.splice(list.indexOf(id), 1);
+  else if (list.length >= 4) return toast("Pick up to 4 electives");
+  else list.push(id);
+  renderSetup();
+});
 $("#classChoices").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) { pick.cls = +b.dataset.cls; renderSetup(); setTimeout(() => goStep(2), 280); } });
 $("#boardChoices").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) { pick.board = b.dataset.board; renderSetup(); } });
-$("#groupChoices").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) { pick.group = b.dataset.group; renderSetup(); setTimeout(() => goStep(3), 280); } });
+$("#groupChoices").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  pick.group = b.dataset.group;
+  renderSetup();
+  if (!isCustomPick()) setTimeout(() => goStep(3), 280); // Arts: choose electives first
+});
 $("#setupBg").onclick = closeSetup;
 $("#classBtn").onclick = openSetup;
 $("#setupDone").onclick = () => {
   const first = !state.profile;
-  state.profile = { cls: pick.cls, group: pick.group, board: pick.board || "ptb" };
+  state.profile = { cls: pick.cls, group: pick.group, board: pick.board || "ptb", ...(isCustomPick() ? { electives: [...pick.electives] } : {}) };
   useBoard();
   seedFor(first);
   save();
@@ -377,6 +420,13 @@ $("#authForm").addEventListener("submit", async (e) => {
       body: JSON.stringify({ username: $("#authUser").value, password: $("#authPass").value, ...(authTab === "signup" ? { email: $("#authEmail").value } : {}) }),
     });
     rememberLogin(res.token, res.username);
+    if (DEMO) { // signing in ends the demo, and the demo student must never reach the account
+      DEMO = false;
+      try { sessionStorage.removeItem("swa-demo"); } catch (e) {}
+      history.replaceState(null, "", location.pathname + location.hash);
+      $("#demoBar").hidden = true;
+      state = defaults();
+    }
     pulling = true;
     const hadCloud = await pullState();
     pulling = false;
@@ -500,7 +550,8 @@ function seedFor(first) {
     state.seeded.push(tag);
   }
   if (!first) return;
-  const core = groupOf().subjects;
+  // books that have chapters (an Arts elective starts empty), group subjects first
+  const core = [...new Set([...groupOf().subjects, ...bookSubjects()])].filter((s) => bookOf(s)?.chapters.length);
   const today = new Date();
   const ch = (s, i) => { const b = SYLLABUS[cls][s]; return `Ch ${b.start + i}: ${b.chapters[i]}`; };
   state.tasks.push(
@@ -727,10 +778,15 @@ function renderChapters(animate) {
         <button class="toggle plan" data-act="plan"><svg><use href="#i-plus"/></svg>Plan</button>
       </div>
     </li>`;
-  }).join("");
+  }).join("") + (b.custom ? (!b.chapters.length || editingBook === sylSubject
+    ? `<li class="book-edit"><p><b>Add your ${esc(info.name)} chapters.</b> Copy them from your book's contents page, one chapter per line. Ticks, revisions, AI plans and practice papers then work for this book too.</p>
+        <textarea class="input" id="bookChapters" rows="8" placeholder="Introduction to ${esc(info.name)}&#10;Chapter two's name&#10;…">${esc(b.chapters.join("\n"))}</textarea>
+        <div class="book-edit-actions"><button class="btn btn-primary" data-act="book-save" type="button">Save chapters</button>${b.chapters.length ? '<button class="btn btn-soft" data-act="book-cancel" type="button">Cancel</button>' : ""}</div></li>`
+    : '<li class="book-edit-link"><button class="link-btn" data-act="book-edit" type="button">✏️ Edit chapter names</button></li>') : "");
   if (animate && A) gsap.fromTo($$("#chapters .chapter"), { x: -40, opacity: 0 }, { x: 0, opacity: 1, stagger: 0.04, duration: 0.8, ease: "expo.out" });
   refreshTriggers();
 }
+let editingBook = null;
 function renderOverall() {
   if (!state.profile) return;
   let read = 0, total = 0;
@@ -759,6 +815,19 @@ $("#sylSubjects").addEventListener("click", (e) => {
 $("#chapters").addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-act]");
   if (!btn) return;
+  if (btn.dataset.act.startsWith("book-")) {
+    if (btn.dataset.act === "book-save") {
+      const lines = $("#bookChapters").value.split(/\r?\n/).map((l) => l.replace(/^\s*(?:(?:ch(?:apter)?|unit)\.?\s*\d+\s*[:.)-]?|\d+\s*[:.)-])\s*/i, "").trim().slice(0, 90)).filter(Boolean).slice(0, 40);
+      if (!lines.length) return toast("Type at least one chapter name");
+      (state.books ||= {})[`${state.profile.cls}-${sylSubject}`] = lines;
+      useBoard();
+      save();
+      toast(`${lines.length} chapters saved for ${SUBJECT_INFO[sylSubject].name}`);
+    }
+    editingBook = btn.dataset.act === "book-edit" ? sylSubject : null;
+    renderSyllabus(true);
+    return;
+  }
   const li = btn.closest(".chapter"), n = +li.dataset.n, k = sylKey(sylSubject, n);
   const b = bookOf(sylSubject), name = b.chapters[n - b.start];
   if (btn.dataset.act === "plan") {
@@ -1307,13 +1376,15 @@ $("#subjectList").addEventListener("click", (e) => {
 //  Everything together
 // =====================================================================
 function renderSelects() {
-  ["focusSubject", "taskSubject", "blockSubject", "examSubject", "cardSubject"].forEach((id) => {
+  ["focusSubject", "taskSubject", "blockSubject", "examSubject", "cardSubject", "checkSubject", "snapSubject"].forEach((id) => {
     const el = $("#" + id), cur = el.value;
     el.innerHTML = subjOptions(cur);
   });
   const bs = $("#buddySubject"), bcur = bs.value;
   bs.innerHTML = `<option value="">Any subject</option>${subjOptions(bcur)}`;
   bs.value = bcur;
+  const ps = $("#paperSubject"), pcur = ps.value;
+  ps.innerHTML = bookSubjects().filter((s) => bookOf(s)?.chapters.length).map((s) => `<option value="${s}" ${s === pcur ? "selected" : ""}>${esc(SUBJECT_INFO[s].name)}</option>`).join("");
 }
 function renderAll(animate) {
   useBoard();
@@ -1335,13 +1406,20 @@ function renderAll(animate) {
   loadBoard();
   renderRoomPick();
   renderMistakes();
+  renderPredict();
+  renderBadges();
   refreshTriggers();
 }
 
 // Footer actions
 $("#sampleBtn").onclick = () => {
   if (!state.profile) return openSetup();
-  const core = groupOf().subjects;
+  addSample();
+  save(); renderAll(); if (A) animateCharts();
+  toast("Sample study history added — charts are filled in");
+};
+function addSample() {
+  const core = groupOf().subjects.length ? groupOf().subjects : bookSubjects();
   for (let i = 1; i <= 40; i++) {
     if (Math.random() < 0.3) continue;
     const n = 1 + Math.floor(Math.random() * 4);
@@ -1350,6 +1428,7 @@ $("#sampleBtn").onclick = () => {
   // Tick the first chapters of each book as read (some revised), spread over the last few weeks
   bookSubjects().forEach((s, si) => {
     const b = bookOf(s);
+    if (!b.chapters.length) return;
     const read = Math.max(1, Math.round(b.chapters.length * (si < core.length ? 0.45 : 0.25)));
     for (let i = 0; i < read; i++) {
       const k = sylKey(s, b.start + i), when = dayKey(addDays(new Date(), -(3 + i * 4 + si)));
@@ -1360,9 +1439,7 @@ $("#sampleBtn").onclick = () => {
     }
   });
   state.exams.forEach((x) => (x.title = x.title.replace(" (update date)", "")));
-  save(); renderAll(); if (A) animateCharts();
-  toast("Sample study history added — charts are filled in");
-};
+}
 $("#exportBtn").onclick = () => {
   const blob = new Blob([JSON.stringify({ app: "study-with-ahmad", version: 1, exportedAt: new Date().toISOString(), data: state }, null, 1)], { type: "application/json" });
   const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: `study-with-ahmad-backup-${dayKey()}.json` });
@@ -1561,11 +1638,12 @@ function scramble(el) {
 rotateQuote();
 setInterval(rotateQuote, 8000);
 setMode("focus");
+if (DEMO) buildDemo();
 renderAll(false);
 setSync("idle");
 
-// Signed in on this device? Load the latest planner from the database.
-if (token) {
+// Signed in on this device? Load the latest planner from the database. (Never in demo mode.)
+if (token && !DEMO) {
   pulling = true;
   setSync("saving", "Loading your planner…");
   pullState()
@@ -1909,6 +1987,16 @@ async function loadBoard() {
   $("#boardCity").value = state.settings.city || "";
   if (!CLOUD) { box.innerHTML = '<li class="muted">The leaderboard needs the Study with Ahmad server.</li>'; return; }
   const scope = $("#boardScope").value, q = new URLSearchParams();
+  if (scope === "cities") {
+    try {
+      const res = await api("/api/leaderboard/cities");
+      const mine = (state.settings.city || "").trim().toLowerCase();
+      box.innerHTML = res.cities.length
+        ? res.cities.map((c, i) => `<li class="${c.city.toLowerCase() === mine ? "me" : ""}"><span class="rank">${["🥇", "🥈", "🥉"][i] || i + 1}</span><span class="who"><b>${esc(c.city)}</b><small>${c.students} student${c.students === 1 ? "" : "s"}</small></span><span class="mins">${fmtMins(c.minutes)}</span></li>`).join("")
+        : '<li class="muted">No city has joined this week yet. Switch on the leaderboard, type your city, and put it on the map!</li>';
+    } catch (err) { box.innerHTML = `<li class="muted">${esc(err.message)}</li>`; }
+    return;
+  }
   if (scope === "class" && state.profile) q.set("cls", state.profile.cls);
   if (scope === "city") { if (!state.settings.city) { box.innerHTML = '<li class="muted">Type your city above to see students near you.</li>'; return; } q.set("city", state.settings.city); }
   try {
@@ -2126,9 +2214,9 @@ $("#buddyMic").onclick = () => {
 
 // ---------- Photo of a question (shrunk on the phone before sending) ----------
 let pendingPhoto = "";
-async function shrinkPhoto(file) {
+async function shrinkPhoto(file, max = 1280) {
   const img = await createImageBitmap(file);
-  const scale = Math.min(1, 1280 / Math.max(img.width, img.height));
+  const scale = Math.min(1, max / Math.max(img.width, img.height));
   const c = Object.assign(document.createElement("canvas"), { width: Math.round(img.width * scale), height: Math.round(img.height * scale) });
   c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
   return c.toDataURL("image/jpeg", 0.82);
@@ -2343,3 +2431,499 @@ $("#resetHelp").onclick = () => {
   $("#feedbackBtn").click();
   $("#fbText").value = `I forgot my password and lost my recovery code. Username: ${$("#resetUser").value.trim()}`;
 };
+
+// =====================================================================
+//  Scores: marked answers, quizzes and practice papers feed the marks predictor and the badges.
+//  (Function declarations only above the click handlers: renderAll() runs near the top of the file.)
+// =====================================================================
+function scores() { return (state.scores ||= []); }
+function addScore(subject, kind, got, of) {
+  scores().push({ date: dayKey(), subject, kind, got, of });
+  if (state.scores.length > 400) state.scores = state.scores.slice(-400);
+  save(); renderPredict(); renderBadges();
+}
+function gradeOf(pct) { return pct >= 80 ? "A+" : pct >= 70 ? "A" : pct >= 60 ? "B" : pct >= 50 ? "C" : pct >= 40 ? "D" : pct >= 33 ? "E" : "F"; }
+function needSignIn(what) {
+  if (CLOUD && token) return false;
+  if (DEMO) { toast(`${what} needs a free account: exit the demo, then sign in`); return true; }
+  toast(`Sign in first to use ${what} (it's free)`);
+  authTab = "login"; openAuth();
+  return true;
+}
+function goTo(sel) {
+  const el = $(sel), sec = el && el.closest("main > section");
+  if (!el) return;
+  if (root.classList.contains("tabbed") && sec) showTab(sec.id);
+  setTimeout(() => scrollToEl(el), 60);
+}
+function waitHTML(text) { return `<p class="muted plan-wait"><span class="dots"><i></i><i></i><i></i></span> ${esc(text)}</p>`; }
+
+// ---------- Marks predictor ----------
+// An estimate per subject from how much of the book is read and revised, flashcards known, recent study time, and
+// (weighted more as they add up) the marks the paper checker, quizzes and practice papers gave.
+function predictions() {
+  if (!state.profile) return [];
+  const since = dayKey(addDays(new Date(), -60)), recent = dayKey(addDays(new Date(), -14));
+  return bookSubjects().filter((s) => bookOf(s)?.chapters.length).map((s) => {
+    const p = bookProgress(s), r = p.read / p.total, v = p.rev / p.total;
+    const sc = scores().filter((x) => x.subject === s && x.date >= since && x.of > 0);
+    const w = sc.length ? Math.min(0.7, 0.3 + 0.1 * sc.length) : 0;
+    const measured = sc.length ? (sc.reduce((a, x) => a + x.got / x.of, 0) / sc.length) * 100 : 0;
+    const cards = state.cards.filter((c) => c.subject === s && (!c.cls || c.cls === state.profile.cls));
+    const known = cards.length ? cards.filter((c) => c.known).length / cards.length : 0.5;
+    const mins = state.sessions.filter((x) => x.subject === s && x.date >= recent).reduce((a, x) => a + x.min, 0);
+    const fromBook = (rr, vv) => 30 + 36 * rr + 24 * vv + (known - 0.5) * 6 + (mins >= 150 ? 3 : 0);
+    const mix = (base) => Math.max(15, Math.min(97, base * (1 - w) + measured * w));
+    const pct = mix(fromBook(r, v));
+    let tip, gain = 0;
+    if (p.read < p.total) {
+      const k = Math.min(3, p.total - p.read);
+      gain = mix(fromBook((p.read + k) / p.total, v)) - pct;
+      tip = `read ${k} more chapter${k > 1 ? "s" : ""} for +${Math.max(1, Math.round(gain))}%`;
+    } else if (p.rev < p.total) {
+      gain = mix(fromBook(r, 1)) - pct;
+      tip = `revise the ${p.total - p.rev} unrevised chapter${p.total - p.rev > 1 ? "s" : ""} for +${Math.max(1, Math.round(gain))}%`;
+    } else tip = sc.length ? "whole book revised: keep doing practice papers" : "whole book revised: try a practice paper to confirm it";
+    return { s, pct: Math.round(pct), tip, gain, tests: sc.length };
+  });
+}
+function renderPredict() {
+  const box = $("#predict");
+  if (!box) return;
+  const list = predictions();
+  if (!list.length) { box.innerHTML = '<p class="muted small">Pick your class (and add your books\' chapters) to see a prediction.</p>'; return; }
+  if (!scores().length && !bookSubjects().some((s) => bookProgress(s).read)) { // a new student shouldn't open on "Grade F"
+    box.innerHTML = '<div class="pred-top"><div class="pred-big"><b>?</b><span>not enough data yet</span></div><p>Tick the chapters you\'ve read in <b>Syllabus</b>, or check one answer with the <b>Paper checker</b>, and your expected marks appear here.</p></div>';
+    return;
+  }
+  const all = Math.round(list.reduce((a, x) => a + x.pct, 0) / list.length);
+  const best = list.slice().sort((a, b) => b.gain - a.gain)[0];
+  box.innerHTML = `<div class="pred-top"><div class="pred-big"><b>~${all}%</b><span>Grade ${gradeOf(all)} at this speed</span></div>
+      <p>${best.gain >= 1 ? `Biggest win: <b>${esc(SUBJECT_INFO[best.s].name)}</b>, ${esc(best.tip)}.` : "You're in great shape. Practice papers keep it there."}</p></div>
+    <ul class="pred-list">${list.map((x) => `<li><div class="sb-top"><span>${esc(SUBJECT_INFO[x.s].name)}</span><b>${x.pct}% · ${gradeOf(x.pct)}</b></div>
+      <div class="sb-track"><i style="--c:${SUBJECT_INFO[x.s].color};transform:scaleX(${x.pct / 100})"></i></div>
+      <small>${esc(x.tip.charAt(0).toUpperCase() + x.tip.slice(1))}${x.tests ? ` · uses ${x.tests} marked test${x.tests > 1 ? "s" : ""}` : ""}</small></li>`).join("")}</ul>`;
+}
+
+// ---------- Badges + weekly challenge ----------
+function badgeList() {
+  return [
+    ["first", "🌱", "First step", "Finish your first focus session", (t) => t.sessions >= 1],
+    ["streak7", "🔥", "Week warrior", "Study 7 days in a row", (t) => t.best >= 7],
+    ["streak30", "🏆", "Unstoppable", "Study 30 days in a row", (t) => t.best >= 30],
+    ["h10", "⏱️", "10 hours", "10 hours of focus", (t) => t.mins >= 600],
+    ["h50", "⌛", "50 hours", "50 hours of focus", (t) => t.mins >= 3000],
+    ["h100", "💯", "100 hours", "100 hours of focus", (t) => t.mins >= 6000],
+    ["book", "📗", "Book finished", "Read every chapter of a book", (t) => t.booksDone >= 1],
+    ["half", "🌓", "Halfway there", "Read half your syllabus", (t) => t.syl >= 0.5],
+    ["all", "🎓", "Syllabus done", "Read your whole syllabus", (t) => t.syl >= 1],
+    ["rev10", "🔁", "Nazar-e-Saani pro", "Do 10 chapter revisions", (t) => t.revisions >= 10],
+    ["cards50", "🃏", "Card shark", "Know 50 flashcards", (t) => t.known >= 50],
+    ["tasks50", "✅", "Task master", "Finish 50 tasks", (t) => t.tasks >= 50],
+    ["aplus", "⭐", "A+ answer", "Score 80%+ on the paper checker", (t) => t.aplus],
+    ["paper", "📄", "Exam ready", "Finish a practice paper", (t) => t.papers >= 1],
+    ["early", "🌅", "Early bird", "A focus session before 7 am", (t) => t.early],
+    ["owl", "🦉", "Night owl", "A focus session after 11 pm", (t) => t.night],
+  ];
+}
+function badgeStats() {
+  const real = state.sessions.filter((s) => DEMO || !s.sample);
+  const days = [...new Set([...real.map((s) => s.date), ...state.tasks.filter((t) => t.doneAt).map((t) => t.doneAt)])].sort();
+  let best = 0, run = 0;
+  days.forEach((d, i) => { run = i && dayKey(addDays(new Date(days[i - 1] + "T00:00"), 1)) === d ? run + 1 : 1; best = Math.max(best, run); });
+  let read = 0, total = 0, booksDone = 0;
+  bookSubjects().forEach((s) => { const p = bookProgress(s); read += p.read; total += p.total; if (p.total && p.read === p.total) booksDone++; });
+  const hours = real.map((s) => +String(s.at || "").slice(0, 2)).filter((h) => !isNaN(h));
+  return {
+    sessions: real.length, mins: real.reduce((a, s) => a + s.min, 0), best, booksDone, syl: total ? read / total : 0,
+    revisions: Object.values(state.syl).reduce((a, p) => a + (p.n || 0), 0), known: state.cards.filter((c) => c.known).length,
+    tasks: state.tasks.filter((t) => t.done).length, aplus: scores().some((x) => x.kind === "check" && x.got / x.of >= 0.8),
+    papers: scores().filter((x) => x.kind === "paper").length, early: hours.some((h) => h < 7), night: hours.some((h) => h >= 23),
+  };
+}
+function checkBadges(quiet) {
+  const t = badgeStats(), got = (state.badges ||= {}), fresh = [];
+  badgeList().forEach(([id, icon, name, , test]) => { if (!got[id] && test(t)) { got[id] = dayKey(); fresh.push([icon, name]); } });
+  if (fresh.length && !quiet) {
+    toast(`${fresh[0][0]} Badge unlocked: ${fresh[0][1]}!${fresh.length > 1 ? ` (+${fresh.length - 1} more)` : ""}`);
+    confetti(innerWidth / 2, innerHeight / 3, 140);
+    setTimeout(renderBadges, 0);
+  }
+  return fresh.length;
+}
+function weekMinutes() {
+  const mon = dayKey(addDays(new Date(), -jsDayToIdx(new Date().getDay())));
+  return state.sessions.filter((s) => s.date >= mon && (DEMO || !s.sample)).reduce((a, s) => a + s.min, 0);
+}
+function renderBadges() {
+  const box = $("#badges");
+  if (!box) return;
+  const got = state.badges || {}, list = badgeList(), wk = weekMinutes(), goal = 600;
+  $("#challenge").innerHTML = `<div class="sb-top"><span>🎯 This week's challenge: 10 hours of focus</span><b>${fmtMins(Math.min(wk, goal))} / 10h</b></div>
+    <div class="sb-track"><i style="--c:var(--primary);transform:scaleX(${Math.min(1, wk / goal)})"></i></div>
+    <small class="muted">${wk >= goal ? "Challenge complete! 🎉 Your minutes also count for your city." : `${fmtMins(goal - wk)} to go · starts again on Monday · see "Cities" on the leaderboard`}</small>`;
+  box.innerHTML = list.map(([id, icon, name, how]) => `<li class="${got[id] ? "on" : ""}" title="${esc(how)}${got[id] ? ` · earned ${got[id]}` : ""}"><span class="b-ico">${icon}</span><b>${esc(name)}</b><small>${got[id] ? "Earned ✓" : esc(how)}</small></li>`).join("");
+  $("#badgeCount").textContent = `${list.filter(([id]) => got[id]).length} of ${list.length} earned`;
+}
+
+// ---------- Summary saved with the planner: the parent page and the evening reminder read only this ----------
+function shareSummary() {
+  if (!state.profile) return null;
+  const today = new Date(), week = Array.from({ length: 7 }, (_, i) => { const k = dayKey(addDays(today, i - 6)); return { d: k, m: minutesOn(k) }; });
+  let read = 0, total = 0;
+  const subjects = [], due = [];
+  bookSubjects().forEach((s) => {
+    const b = bookOf(s);
+    if (!b?.chapters.length) return;
+    const p = bookProgress(s);
+    read += p.read; total += p.total;
+    subjects.push({ n: SUBJECT_INFO[s].name, c: SUBJECT_INFO[s].color, p: Math.round((p.read / p.total) * 100), v: Math.round((p.rev / p.total) * 100) });
+    b.chapters.forEach((_, i) => {
+      const pr = state.syl[sylKey(s, b.start + i)], last = pr && pr.r && (pr.vAt || pr.rAt);
+      if (last) due.push(dayKey(addDays(new Date(last + "T00:00"), REVIEW_GAPS[Math.min(pr.n || 0, REVIEW_GAPS.length - 1)])));
+    });
+  });
+  const ne = nextExam(), pred = predictions();
+  const active = [...state.sessions.map((s) => s.date), ...state.tasks.filter((t) => t.doneAt).map((t) => t.doneAt)].sort();
+  return {
+    v: 1, cls: state.profile.cls, board: boardOf().short, group: groupOf()?.name || "", read, total,
+    pct: total ? Math.round((read / total) * 100) : 0, subjects, week, today: minutesOn(dayKey()), streak: streak(),
+    lastDay: active[active.length - 1] || "", tasksDone7: state.tasks.filter((t) => t.doneAt && t.doneAt >= week[0].d).length,
+    exam: ne ? { t: ne.title.slice(0, 60), d: ne.date } : null, due: due.sort().slice(0, 150),
+    tasksDue: state.tasks.filter((t) => !t.done && t.due).map((t) => t.due).sort().slice(0, 100),
+    badges: Object.keys(state.badges || {}).length, predict: pred.length ? Math.round(pred.reduce((a, x) => a + x.pct, 0) / pred.length) : null,
+  };
+}
+
+// ---------- Quizzes (book-page MCQs and practice papers): tap an option, see right/wrong at once ----------
+const quizzes = {}; // id -> { mcqs, subject, kind, answered, right }
+function quizHTML(id, mcqs) {
+  return `<ol class="quiz" data-quiz="${id}">${mcqs.map((m, i) => `<li data-i="${i}"><p>${esc(m.q)}</p>
+      <div class="quiz-opts">${m.options.map((o, j) => `<button type="button" data-o="${j}"><b>${"ABCD"[j]}</b><span>${esc(o)}</span></button>`).join("")}</div>
+      <p class="quiz-why" hidden></p></li>`).join("")}</ol><p class="quiz-score" id="score-${id}"></p>`;
+}
+document.addEventListener("click", (e) => {
+  const b = e.target.closest(".quiz-opts button");
+  if (!b) return;
+  const li = b.closest("li"), qid = b.closest(".quiz").dataset.quiz, q = quizzes[qid];
+  if (!q || li.classList.contains("done")) return;
+  const m = q.mcqs[+li.dataset.i], pickd = +b.dataset.o, ok = pickd === m.answer;
+  li.classList.add("done", ok ? "right" : "wrong");
+  $$("button", li).forEach((x, j) => { x.disabled = true; x.classList.toggle("correct", j === m.answer); x.classList.toggle("picked", j === pickd && !ok); });
+  const why = $(".quiz-why", li);
+  why.hidden = false;
+  why.textContent = `${ok ? "✓ Correct." : `✗ The answer is ${"ABCD"[m.answer]}.`} ${m.why || ""}`;
+  q.answered++;
+  if (ok) { q.right++; confetti(...centerOf(b), 16); }
+  else addMistake({ kind: "mcq", ref: "q:" + m.q.slice(0, 80), subject: q.subject, text: m.q, answer: `${m.options[m.answer]}. ${m.why || ""}` });
+  const done = q.answered === q.mcqs.length, el = $("#score-" + qid);
+  el.textContent = `${q.right} / ${q.answered} correct${done ? ` · ${gradeOf((q.right / q.mcqs.length) * 100)}` : ""}`;
+  if (done) {
+    addScore(q.subject, q.kind, q.right, q.mcqs.length);
+    toast(q.right === q.mcqs.length ? "Full marks! 🎉" : `Done: ${q.right} of ${q.mcqs.length}. Missed ones are in your mistake notebook`);
+    if (q.right / q.mcqs.length >= 0.8) confetti(...centerOf(el), 90);
+  }
+});
+
+// ---------- Paper checker: a board examiner marks your written answer ----------
+let checkPhoto = "";
+$("#checkPhoto").addEventListener("change", async (e) => {
+  const f = e.target.files[0];
+  e.target.value = "";
+  if (!f) return;
+  try {
+    checkPhoto = await shrinkPhoto(f, 1600);
+    $("#checkThumb").src = checkPhoto; $("#checkThumb").hidden = false;
+    $("#checkPhotoText").textContent = "Change photo";
+    $("#checkClear").hidden = false;
+  } catch (err) { toast("That photo couldn't be opened. Try another one"); }
+});
+$("#checkClear").onclick = () => { checkPhoto = ""; $("#checkThumb").hidden = true; $("#checkClear").hidden = true; $("#checkPhotoText").textContent = "Photo of my answer"; };
+let lastCheck = null;
+$("#checkForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (needSignIn("the paper checker")) return;
+  const q = $("#checkQ").value.trim(), a = $("#checkA").value.trim();
+  if (!q) return toast("Type the question first, so the examiner knows what you answered");
+  if (!a && !checkPhoto) return toast("Type your answer, or add a photo of your answer sheet");
+  const s = $("#checkSubject").value, marks = +$("#checkMarks").value;
+  $("#checkBtn").disabled = true;
+  $("#checkOut").innerHTML = waitHTML("The examiner is reading your answer…");
+  try {
+    const r = await api("/api/check", { method: "POST", body: JSON.stringify({ question: q, answer: a, answer_image: checkPhoto, marks, subject: subj(s).name, level: state.profile ? levelText() : "", language: buddyLang }) });
+    lastCheck = { ...r, q, s };
+    const pct = (r.score / r.out_of) * 100;
+    const list = (title, items, cls) => (items.length ? `<div class="check-list ${cls}"><b>${title}</b><ul>${items.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>` : "");
+    $("#checkOut").innerHTML = `<div class="check-card ${pct >= 80 ? "great" : pct >= 50 ? "ok" : "low"}">
+        <div class="check-score"><b>${r.score}</b><span>/ ${r.out_of}</span></div>
+        <div><span class="tag">${gradeOf(pct)} · ${Math.round(pct)}%</span><p>${esc(r.summary)}</p></div></div>
+      ${list("✅ Got marks for", r.good, "good")}${list("❌ Missing", r.missing, "miss")}${list("⚠️ Mistakes", r.mistakes, "warn")}
+      ${r.improve ? `<p class="check-improve">💡 <b>For full marks:</b> ${esc(r.improve)}</p>` : ""}
+      ${r.key_points.length ? `<details class="check-key"><summary>📋 What a full-marks answer has</summary><ul>${r.key_points.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></details>` : ""}
+      <div class="check-actions"><button class="btn btn-soft" type="button" id="checkAgain">Try again</button><button class="btn btn-soft" type="button" id="checkExplain"><svg><use href="#i-spark"/></svg>Explain with Study Buddy</button></div>`;
+    $("#buddyLeft").textContent = `${r.left} AI uses left today`;
+    if (A) gsap.from("#checkOut > *", { y: 16, opacity: 0, stagger: 0.06, duration: 0.6, ease: "expo.out" });
+    addScore(s, "check", r.score, r.out_of);
+    if (pct < 60) addMistake({ kind: "buddy", subject: s, text: q.slice(0, 200), answer: [r.improve, ...r.key_points.map((x) => "- " + x)].filter(Boolean).join("\n").slice(0, 1500) });
+    if (pct >= 80) confetti(...centerOf($(".check-score")), 110);
+  } catch (err) {
+    $("#checkOut").innerHTML = `<p class="auth-error">${esc(err.message)}</p>`;
+  } finally { $("#checkBtn").disabled = false; }
+});
+$("#checkOut").addEventListener("click", (e) => {
+  if (e.target.closest("#checkAgain")) { $("#checkOut").innerHTML = ""; $("#checkA").focus(); }
+  if (e.target.closest("#checkExplain") && lastCheck) {
+    askBuddy(`I wrote an answer to this ${lastCheck.out_of}-mark question and got ${lastCheck.score}/${lastCheck.out_of}: "${lastCheck.q}". Write a model board-exam answer for full marks, then a 3-line tip on how to remember it.`);
+    goTo("#buddyChat");
+  }
+});
+function fillChecker(subject, marks, question) {
+  if ([...$("#checkSubject").options].some((o) => o.value === subject)) $("#checkSubject").value = subject;
+  const sel = $("#checkMarks");
+  if (![...sel.options].some((o) => +o.value === marks)) sel.insertAdjacentHTML("beforeend", `<option>${marks}</option>`);
+  sel.value = String(marks);
+  $("#checkQ").value = question;
+  $("#checkA").value = "";
+  $("#checkOut").innerHTML = "";
+  goTo("#checker");
+  setTimeout(() => $("#checkA").focus(), 700);
+}
+
+// ---------- Book page photo -> flashcards + MCQs ----------
+let snapCards = [];
+$("#snapFile").addEventListener("change", async (e) => {
+  const f = e.target.files[0];
+  e.target.value = "";
+  if (!f || needSignIn("Book page to cards")) return;
+  const s = $("#snapSubject").value;
+  $("#snapOut").innerHTML = waitHTML("Reading your page and writing questions… (about 20 seconds)");
+  try {
+    const img = await shrinkPhoto(f, 1600);
+    const r = await api("/api/cards", { method: "POST", body: JSON.stringify({ image: img, subject: subj(s).name, level: state.profile ? levelText() : "", language: buddyLang }) });
+    snapCards = r.cards;
+    const id = "snap" + uid();
+    quizzes[id] = { mcqs: r.mcqs, subject: s, kind: "quiz", answered: 0, right: 0 };
+    $("#snapOut").innerHTML = `<div class="snap-head"><img src="${img}" alt="Your page" /><div><b>${esc(r.topic || "Your page")}</b><p class="muted small">${r.cards.length} flashcards and ${r.mcqs.length} MCQs, made only from this page.</p>
+        ${r.cards.length ? `<button class="btn btn-primary" type="button" id="snapAdd"><svg><use href="#i-plus"/></svg><span>Add ${r.cards.length} flashcards to my deck</span></button>` : ""}</div></div>
+      ${r.cards.length ? `<details class="snap-cards"><summary>See the flashcards</summary><ul>${r.cards.map((c) => `<li><b>${esc(c.front)}</b><span>${esc(c.back)}</span></li>`).join("")}</ul></details>` : ""}
+      ${r.mcqs.length ? `<h4 class="quiz-title">Quick quiz</h4>${quizHTML(id, r.mcqs)}` : ""}`;
+    if (A) gsap.from("#snapOut > *", { y: 16, opacity: 0, stagger: 0.06, duration: 0.6, ease: "expo.out" });
+    refreshTriggers();
+  } catch (err) { $("#snapOut").innerHTML = `<p class="auth-error">${esc(err.message)}</p>`; }
+});
+$("#snapOut").addEventListener("click", (e) => {
+  const b = e.target.closest("#snapAdd");
+  if (!b || !snapCards.length) return;
+  const s = $("#snapSubject").value;
+  snapCards.forEach((c) => state.cards.push({ id: uid(), subject: s, front: c.front, back: c.back, cls: state.profile?.cls }));
+  save();
+  deck = s; renderCards();
+  b.disabled = true; b.lastChild.textContent = "Added to your deck ✓";
+  toast(`${snapCards.length} flashcards added to ${subj(s).name}`);
+  confetti(...centerOf(b), 50);
+  snapCards = [];
+});
+
+// ---------- Practice paper in the board pattern ----------
+let paper = null, paperEnd = 0, paperTick = null;
+$("#paperForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (needSignIn("practice papers")) return;
+  const s = $("#paperSubject").value, b = bookOf(s);
+  if (!b) return toast("Pick your class first");
+  const scope = $("#paperScope").value;
+  let chs = b.chapters.map((name, i) => ({ n: b.start + i, name, pr: state.syl[sylKey(s, b.start + i)] || {} }));
+  if (scope === "read") chs = chs.filter((c) => c.pr.r);
+  if (scope === "weak") { const w = weakChapters().filter((x) => x.s === s).map((x) => x.n); chs = chs.filter((c) => w.includes(c.n) || (c.pr.r && !c.pr.v)); }
+  if (scope !== "all" && !chs.length) {
+    toast(scope === "read" ? "No chapters ticked as read yet, so the paper covers the whole book" : "No weak chapters here, so the paper covers the whole book");
+  }
+  if (!chs.length || scope === "all") chs = b.chapters.map((name, i) => ({ n: b.start + i, name }));
+  $("#paperBtn").disabled = true;
+  $("#paperOut").innerHTML = waitHTML("Setting your paper… this takes up to a minute");
+  try {
+    paper = await api("/api/paper", { method: "POST", body: JSON.stringify({ subject: SUBJECT_INFO[s].name, chapters: chs.map((c) => `Ch ${c.n}: ${c.name}`), kind: $("#paperKind").value, level: levelText(), board: boardOf().name, language: buddyLang }) });
+    paper.s = s;
+    renderPaper();
+  } catch (err) { $("#paperOut").innerHTML = `<p class="auth-error">${esc(err.message)}</p>`; }
+  finally { $("#paperBtn").disabled = false; }
+});
+function renderPaper() {
+  const p = paper, id = "paper" + uid(), total = p.mcqs.length + [...p.short, ...p.long].reduce((a, q) => a + q.marks, 0);
+  quizzes[id] = { mcqs: p.mcqs, subject: p.s, kind: "paper", answered: 0, right: 0 };
+  clearInterval(paperTick);
+  paperTick = null;
+  const written = (list, sec) => `<ol class="paper-qs">${list.map((q, i) => `<li><p>${esc(q.q)} <span class="tag">${q.marks} marks</span></p>
+      <div class="paper-q-actions"><button class="btn btn-soft" type="button" data-check="${sec}|${i}"><svg><use href="#i-check"/></svg>Check my answer</button>
+      ${q.answer ? `<details><summary>Key points</summary><p>${esc(q.answer)}</p></details>` : ""}</div></li>`).join("")}</ol>`;
+  $("#paperOut").innerHTML = `<div class="paper-head"><div><h4>${esc(p.title)}</h4><p class="small">${esc(SUBJECT_INFO[p.s].name)} · Total ${total} marks · ${fmtMins(p.minutes)} · a practice paper in the board pattern, not a real past paper</p></div>
+      <div class="paper-tools"><b class="paper-clock" id="paperClock">${fmt(p.minutes * 60)}</b><button class="btn btn-primary" type="button" id="paperStart"><svg><use href="#i-play"/></svg><span>Start</span></button><button class="btn btn-soft" type="button" id="paperPrint">Print</button></div></div>
+    ${p.mcqs.length ? `<h5>Section A · MCQs <small>(${p.mcqs.length} marks, tap your answer)</small></h5>${quizHTML(id, p.mcqs)}` : ""}
+    ${p.short.length ? `<h5>Section B · Short questions</h5>${written(p.short, "short")}` : ""}
+    ${p.long.length ? `<h5>Section C · Long questions</h5>${written(p.long, "long")}` : ""}`;
+  if (A) gsap.from("#paperOut > *", { y: 20, opacity: 0, stagger: 0.05, duration: 0.6, ease: "expo.out" });
+  refreshTriggers();
+}
+$("#paperOut").addEventListener("click", (e) => {
+  const c = e.target.closest("[data-check]");
+  if (c && paper) { const [sec, i] = c.dataset.check.split("|"), q = paper[sec][+i]; return fillChecker(paper.s, q.marks, q.q); }
+  if (e.target.closest("#paperStart")) {
+    const btn = $("#paperStart"), clock = $("#paperClock");
+    if (paperTick) { clearInterval(paperTick); paperTick = null; btn.lastChild.textContent = "Start"; return; }
+    paperEnd = Date.now() + (clock.dataset.left ? +clock.dataset.left : paper.minutes * 60) * 1000;
+    btn.lastChild.textContent = "Pause";
+    paperTick = setInterval(() => {
+      const left = Math.max(0, Math.round((paperEnd - Date.now()) / 1000));
+      clock.textContent = fmt(left);
+      clock.dataset.left = left;
+      if (!left) { clearInterval(paperTick); paperTick = null; chime(); toast("Time's up! Pens down ✍️ Now check your answers"); }
+    }, 500);
+    toast("Paper started. All the best!");
+  }
+  if (e.target.closest("#paperPrint")) printPaper();
+});
+function printPaper() {
+  const p = paper, w = window.open("", "_blank");
+  if (!w) return toast("Allow pop-ups to print the paper");
+  const qs = (list) => list.map((q) => `<li>${esc(q.q)} <i>(${q.marks})</i></li>`).join("");
+  w.document.write(`<!doctype html><meta charset="utf-8"><title>${esc(p.title)}</title><style>body{font:15px/1.55 system-ui,sans-serif;max-width:760px;margin:24px auto;padding:0 16px;color:#111}h1{font-size:20px}h2{font-size:16px;margin-top:22px;border-bottom:1px solid #999}li{margin:6px 0}.o{display:grid;grid-template-columns:1fr 1fr;gap:2px 18px;margin-left:4px}i{color:#555}.key{page-break-before:always;font-size:13px}</style>
+    <h1>${esc(p.title)}</h1><p>${esc(SUBJECT_INFO[p.s].name)} · Time: ${fmtMins(p.minutes)} · Study with Ahmad practice paper (board pattern)</p>
+    ${p.mcqs.length ? `<h2>Section A: MCQs</h2><ol>${p.mcqs.map((m) => `<li>${esc(m.q)}<div class="o">${m.options.map((o, j) => `<span>(${"abcd"[j]}) ${esc(o)}</span>`).join("")}</div></li>`).join("")}</ol>` : ""}
+    ${p.short.length ? `<h2>Section B: Short questions</h2><ol>${qs(p.short)}</ol>` : ""}${p.long.length ? `<h2>Section C: Long questions</h2><ol>${qs(p.long)}</ol>` : ""}
+    ${p.mcqs.length ? `<div class="key"><h2>Answer key (MCQs)</h2><p>${p.mcqs.map((m, i) => `${i + 1}: ${"abcd"[m.answer]}`).join(" · ")}</p></div>` : ""}`);
+  w.document.close();
+  setTimeout(() => w.print(), 300);
+}
+
+// ---------- Ammi-Abbu link: a read-only progress page for the family ----------
+async function renderFamily() {
+  const box = $("#familyActions");
+  if (!box) return;
+  if (DEMO) { box.innerHTML = '<a class="btn btn-soft" href="/parent.html#demo" target="_blank" rel="noopener">See what parents see (demo)</a>'; return; }
+  if (!CLOUD || !token) { box.innerHTML = '<button class="btn btn-soft" type="button" data-fam="signin">Sign in to make a family link</button>'; return; }
+  try {
+    const st = await api("/api/parent-link");
+    box.innerHTML = st.active
+      ? `<p class="small">✅ A family link is on (made ${new Date(st.created_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}). Lost it? Make a new one: the old link stops working.</p>
+         <div class="fam-btns"><button class="btn btn-soft" type="button" data-fam="new">Make a new link</button><button class="link-btn danger" type="button" data-fam="off">Switch the link off</button></div>`
+      : '<button class="btn btn-primary" type="button" data-fam="new">👨‍👩‍👧 Make a link for Ammi-Abbu</button>';
+  } catch (err) { box.innerHTML = `<p class="muted small">${esc(err.message)}</p>`; }
+}
+$("#family").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-fam]");
+  if (!b) return;
+  if (b.dataset.fam === "signin") { authTab = "login"; return openAuth(); }
+  if (b.dataset.fam === "off") {
+    if (!confirm("Switch off the family link? Anyone who has it will no longer see your progress.")) return;
+    try { await api("/api/parent-link", { method: "DELETE" }); toast("Family link switched off"); } catch (err) { toast(err.message); }
+    return renderFamily();
+  }
+  if (b.dataset.fam === "new") {
+    b.disabled = true;
+    try {
+      clearTimeout(syncTimer);
+      await pushState(); // the page shows what was last saved, so save now
+      const { token: t } = await api("/api/parent-link", { method: "POST" });
+      const url = `${location.origin}/parent.html#${t}`;
+      const msg = `Assalam-o-Alaikum! Yeh meri parhai ka live hisaab hai (Study with Ahmad): ${url}`;
+      await renderFamily();
+      $("#familyActions").insertAdjacentHTML("afterbegin", `<div class="code-box fam-link"><code>${esc(url)}</code></div>
+        <div class="fam-btns"><a class="btn btn-primary" href="https://wa.me/?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener">Send on WhatsApp</a><button class="btn btn-soft" type="button" data-copy="${esc(url)}">Copy link</button></div>`);
+    } catch (err) { toast(err.message); b.disabled = false; }
+  }
+});
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-copy]");
+  if (!b) return;
+  try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = "Copied ✓"; } catch (err) { toast("Select the link and copy it by hand"); }
+});
+
+// ---------- Evening reminders (Web Push) ----------
+const PUSH_OK = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window && CLOUD;
+function keyBytes(b64) { const s = atob((b64 + "=".repeat((4 - (b64.length % 4)) % 4)).replace(/-/g, "+").replace(/_/g, "/")); return Uint8Array.from(s, (c) => c.charCodeAt(0)); }
+async function renderPush() {
+  const box = $("#pushOn");
+  if (!PUSH_OK) {
+    box.disabled = true;
+    $("#pushNote").textContent = /iphone|ipad/i.test(navigator.userAgent) ? "On iPhone, first add the app to your Home Screen (Share → Add to Home Screen), then switch reminders on from there." : "This browser can't show reminders. Try Chrome or Edge.";
+    return;
+  }
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    const sub = reg && (await reg.pushManager.getSubscription());
+    box.checked = !!sub && Notification.permission === "granted";
+    $("#pushNote").textContent = box.checked ? "On: one short nudge around 5 pm, only when revisions or tasks are due or your streak needs you." : "One short nudge around 5 pm on days something needs you. No spam.";
+  } catch (e) {}
+}
+$("#pushOn").addEventListener("change", async (e) => {
+  const on = e.target.checked;
+  if (on && needSignIn("reminders")) { e.target.checked = false; return; }
+  e.target.disabled = true;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    if (on) {
+      if ((await Notification.requestPermission()) !== "granted") throw new Error("Notifications are blocked. Allow them for this site in your browser settings");
+      const { key } = await api("/api/push/key");
+      if (!key) throw new Error("Reminders aren't switched on on the server yet");
+      const sub = (await reg.pushManager.getSubscription()) || (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(key) }));
+      await api("/api/push/subscribe", { method: "POST", body: JSON.stringify(sub.toJSON()) });
+      clearTimeout(syncTimer);
+      await pushState();
+      await api("/api/push/test", { method: "POST" });
+      toast("Reminders on! A test notification is on its way 🔔");
+    } else {
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) { await api("/api/push/unsubscribe", { method: "POST", body: JSON.stringify({ endpoint: sub.endpoint }) }).catch(() => {}); await sub.unsubscribe(); }
+      toast("Reminders off");
+    }
+  } catch (err) { toast(err.message); }
+  e.target.disabled = false;
+  renderPush();
+});
+
+// ---------- Load-shedding mode: dark AMOLED screen, no animations, saves battery on a UPS or low charge ----------
+const SAVER = root.classList.contains("saver");
+function setSaver(on) {
+  try { on ? localStorage.setItem("swa-saver", "1") : localStorage.removeItem("swa-saver"); } catch (e) {}
+  location.reload();
+}
+$("#saverBtn").classList.toggle("active", SAVER);
+$("#saverBtn").textContent = SAVER ? "⚡ Load-shedding mode: on" : "⚡ Load-shedding mode";
+$("#saverBtn").onclick = () => setSaver(!SAVER);
+$("#netSaver").hidden = SAVER;
+$("#netSaver").onclick = () => setSaver(true);
+
+// ---------- Demo mode ----------
+function buildDemo() {
+  state = defaults();
+  state.settings = { ...state.settings, exam: 180, goal: 120, city: "Lahore" };
+  state.profile = { cls: 10, group: "bio", board: "ptb" };
+  useBoard();
+  seedFor(true);
+  addSample();
+  const core = groupOf().subjects;
+  [[core[0], 4, 5, "check", 2], [core[1], 7, 10, "quiz", 4], [core[2], 6.5, 8, "check", 6], [core[0], 9, 10, "quiz", 9], [core[3], 11, 15, "paper", 12], [core[1], 3, 5, "check", 15]]
+    .forEach(([s, got, of, kind, ago]) => scores().push({ date: dayKey(addDays(new Date(), -ago)), subject: s, kind, got, of }));
+  state.cards.forEach((c, i) => (c.known = i % 3 !== 0));
+  state.tasks.slice(0, 2).forEach((t) => { t.done = true; t.doneAt = dayKey(); });
+  state.sessions.push({ date: dayKey(), min: 25, subject: core[0], at: "06:40", sample: true }, { date: dayKey(), min: 25, subject: core[1], at: "16:10", sample: true });
+  state.mistakes = [
+    { id: uid(), kind: "mcq", ref: "demo1", subject: core[0], count: 2, at: dayKey(), text: "The SI unit of specific heat capacity is…", answer: "J kg⁻¹ K⁻¹: the heat needed to warm 1 kg by 1 K." },
+    { id: uid(), kind: "mcq", ref: "demo2", subject: core[1], count: 1, at: dayKey(), text: "Which salt gives a lilac flame?", answer: "Potassium salts: K⁺ ions colour the flame lilac." },
+  ];
+  checkBadges(true);
+  $("#demoBar").hidden = false;
+}
+$("#demoBtn").onclick = $("#demoFooter").onclick = () => {
+  try { sessionStorage.setItem("swa-demo", "1"); } catch (e) {}
+  location.href = location.pathname + "?demo";
+};
+$("#demoExit").onclick = () => {
+  try { sessionStorage.removeItem("swa-demo"); } catch (e) {}
+  location.href = location.pathname;
+};
+
+renderPredict();
+renderBadges();
+renderFamily();
+renderPush();

@@ -18,8 +18,10 @@
       const t = localStorage.getItem("studynest-theme"), a = localStorage.getItem("swa-accent"), r = document.documentElement;
       if (t === "amoled") { r.dataset.theme = "dark"; r.dataset.amoled = "1"; } else if (t) r.dataset.theme = t;
       if (a) r.dataset.accent = a;
+      // Load-shedding mode: black screen, no animations (saves battery on a UPS or a low phone)
+      if (localStorage.getItem("swa-saver") === "1") { r.dataset.theme = "dark"; r.dataset.amoled = "1"; r.classList.add("saver"); }
     } catch (e) {}
-    if (!matchMedia("(prefers-reduced-motion: reduce)").matches) document.documentElement.classList.add("anim");
+    if (!document.documentElement.classList.contains("saver") && !matchMedia("(prefers-reduced-motion: reduce)").matches) document.documentElement.classList.add("anim");
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -352,6 +354,16 @@
           </form>
           <div class="plan-out" id="planOut"></div>
         </div>
+        <div class="panel plan paper reveal" id="paperPanel">
+          <div class="panel-head"><h3><svg class="spark"><use href="#i-spark"/></svg>Practice paper</h3><span class="muted small">Board pattern · MCQs marked as you go</span></div>
+          <form class="plan-form paper-form" id="paperForm" autocomplete="off">
+            <label>Subject<select class="input" id="paperSubject"></select></label>
+            <label>Chapters<select class="input" id="paperScope"><option value="read">Chapters I've read</option><option value="weak">My weak chapters</option><option value="all">Whole book</option></select></label>
+            <label>Paper<select class="input" id="paperKind"><option value="quick">Quick test · 40 min</option><option value="full">Full paper · 2.5 hours</option></select></label>
+            <button class="btn btn-primary" type="submit" id="paperBtn"><svg><use href="#i-spark"/></svg>Make my paper</button>
+          </form>
+          <div class="paper-out" id="paperOut"></div>
+        </div>
       </div>
     </section>
 
@@ -408,6 +420,15 @@
             <p class="muted small" id="deckInfo"></p>
           </form>
         </div>
+        <div class="panel snap reveal" id="snap">
+          <div class="panel-head"><h3>📸 Book page → flashcards &amp; MCQs</h3><span class="muted small">Photo any page, get questions from it</span></div>
+          <div class="snap-bar">
+            <select class="input" id="snapSubject" aria-label="Subject"></select>
+            <label class="btn btn-primary"><svg><use href="#i-camera"/></svg><span>Take or choose a photo</span><input type="file" accept="image/*" capture="environment" id="snapFile" hidden /></label>
+          </div>
+          <p class="muted small">Hold the phone straight over the page in good light. Questions come only from what's on that page.</p>
+          <div class="snap-out" id="snapOut"></div>
+        </div>
         <div class="panel mistakes reveal" id="mistakes">
           <div class="panel-head"><h3>📒 Mistake notebook</h3><span class="muted small" id="mistakeCount"></span></div>
           <p class="muted small">Cards you mark <b>Again</b> and Study Buddy answers you save land here. Before an exam, read just this page.</p>
@@ -455,12 +476,30 @@
               <button class="icon-btn solid" type="submit" aria-label="Add subject"><svg><use href="#i-plus"/></svg></button>
             </form>
           </div>
+          <div class="panel predict-panel reveal">
+            <div class="panel-head"><h3>🔮 Marks predictor</h3><span class="muted small">An estimate, not a promise</span></div>
+            <div id="predict"></div>
+            <p class="muted small">From your chapters read and revised, flashcards, study time, and the marks from the paper checker, quizzes and practice papers. More tests make it sharper.</p>
+          </div>
+          <div class="panel badges-panel reveal">
+            <div class="panel-head"><h3>🏅 Badges</h3><span class="muted small" id="badgeCount"></span></div>
+            <div class="challenge" id="challenge"></div>
+            <ul class="badges" id="badges"></ul>
+          </div>
+          <div class="panel family reveal" id="family">
+            <div class="panel-head"><h3>👨‍👩‍👧 Ammi-Abbu link</h3><span class="muted small">Read-only · switch off any time</span></div>
+            <p class="muted small">A private page for your family: today's study time, the last 7 days, syllabus done, streak and next exam. No tasks, notes or chats.</p>
+            <div class="family-actions" id="familyActions"></div>
+            <div class="panel-head fam-push"><h3>🔔 Evening reminders</h3></div>
+            <label class="switch"><input type="checkbox" id="pushOn" /><span></span>Remind me when revisions are due or my streak needs me</label>
+            <p class="muted small" id="pushNote"></p>
+          </div>
           <div class="panel board-panel reveal">
             <div class="panel-head"><h3>🏆 Leaderboard · this week</h3><span class="muted small">Focus minutes since Monday</span></div>
             <div class="board-bar">
               <label class="switch"><input type="checkbox" id="boardJoin" /><span></span>Show me on the leaderboard</label>
               <input class="input" id="boardCity" maxlength="30" placeholder="Your city (optional)" />
-              <select class="input" id="boardScope"><option value="all">All Pakistan</option><option value="class">My class</option><option value="city">My city</option></select>
+              <select class="input" id="boardScope"><option value="all">All Pakistan</option><option value="class">My class</option><option value="city">My city</option><option value="cities">Cities (weekly challenge)</option></select>
             </div>
             <ol class="board" id="boardList"></ol>
             <p class="muted small">Only your username, class, city and focus minutes are shown, and only if you switch it on. Sample data never counts.</p>
@@ -509,6 +548,24 @@
             <button class="btn btn-primary" type="submit" id="buddySend" aria-label="Ask"><svg><use href="#i-send"/></svg><span>Ask</span></button>
           </form>
           <p class="muted small buddy-note">Study Buddy uses Google Gemini and can make mistakes. Check important answers against your textbook. Sign in to use it: 40 free questions a day.</p>
+        </div>
+        <div class="panel checker reveal" id="checker">
+          <div class="panel-head"><h3>📝 Paper checker</h3><span class="muted small">Your answer, marked like a board examiner would</span></div>
+          <form class="check-form" id="checkForm" autocomplete="off">
+            <div class="check-row">
+              <select class="input" id="checkSubject" aria-label="Subject"></select>
+              <label class="check-marks">Marks <select class="input" id="checkMarks"><option>2</option><option>3</option><option>4</option><option selected>5</option><option>8</option><option>9</option></select></label>
+            </div>
+            <textarea class="input" id="checkQ" rows="2" maxlength="1500" placeholder="The question, e.g. Define acceleration. Derive v = u + at."></textarea>
+            <textarea class="input" id="checkA" rows="4" maxlength="4000" placeholder="Type your answer, or add a photo of your handwritten answer below"></textarea>
+            <div class="check-photo">
+              <label class="btn btn-soft"><svg><use href="#i-camera"/></svg><span id="checkPhotoText">Photo of my answer</span><input type="file" accept="image/*" capture="environment" id="checkPhoto" hidden /></label>
+              <img id="checkThumb" alt="Your answer" hidden />
+              <button class="icon-btn" type="button" id="checkClear" aria-label="Remove photo" hidden><svg class="x"><use href="#i-plus"/></svg></button>
+              <button class="btn btn-primary" type="submit" id="checkBtn"><svg><use href="#i-check"/></svg>Check my answer</button>
+            </div>
+          </form>
+          <div class="check-out" id="checkOut" aria-live="polite"></div>
         </div>
         <div class="panel solver reveal" id="solver">
           <div class="panel-head"><h3>🧮 Formula solver</h3><span class="muted small">Check your numericals step by step, no internet needed</span></div>
@@ -627,6 +684,8 @@
         <button class="link-btn" id="exportBtn">Export backup</button>
         <label class="link-btn" for="importFile">Import backup</label><input type="file" accept="application/json,.json" id="importFile" hidden />
         <button class="link-btn" id="sampleBtn">Load sample data</button>
+        <button class="link-btn" id="demoFooter">Try the demo</button>
+        <button class="link-btn" id="saverBtn">⚡ Load-shedding mode</button>
         <button class="link-btn danger" id="clearBtn">Clear everything</button>
         <button class="link-btn" id="feedbackBtn">Koi masla? Batayein</button>
         <a class="link-btn" href="/privacy.html">Privacy</a>
@@ -645,6 +704,7 @@
         <p class="muted step-text">Your free planner for Matric and Inter (Punjab Board and Federal Board): every chapter of your books, a focus timer, tasks, timetable, exam countdowns and flashcards. Set it up in three quick steps.</p>
         <button class="btn btn-primary btn-wide glow-border" data-go="1">Let's start</button>
         <p class="setup-alt">Already have an account? <button class="link-btn" id="setupSignIn">Sign in</button></p>
+        <p class="setup-alt">Just looking? <button class="link-btn" id="demoBtn">Try a ready-made demo</button></p>
       </div>
       <div class="step" data-step="1">
         <p class="kicker">Step 2 of 4</p>
@@ -665,6 +725,10 @@
         <p class="kicker">Step 3 of 4</p>
         <h2>Select your subjects group</h2>
         <div class="choice-row" id="groupChoices"></div>
+        <div class="electives" id="electives" hidden>
+          <p class="muted small"><b>Pick your elective subjects</b> (up to 4). You'll add each book's chapters from its contents page.</p>
+          <div class="el-chips" id="electiveChoices"></div>
+        </div>
         <div class="step-nav"><button class="btn btn-soft" data-go="1">Back</button><button class="btn btn-primary" data-go="3" id="stepGroupNext" disabled>Next</button></div>
       </div>
       <div class="step" data-step="3">
@@ -757,7 +821,8 @@
     </div>
   </div>
 
-  <div class="net-banner" id="netBanner" hidden>📴 You're offline. Everything still works and is saved on this device; it will sync when the internet is back.</div>
+  <div class="net-banner" id="netBanner" hidden>📴 You're offline. Everything still works and is saved on this device; it will sync when the internet is back. <button class="link-btn" id="netSaver" type="button">Save battery</button></div>
+  <div class="demo-bar" id="demoBar" hidden>👀 <b>Demo mode:</b> a sample Class 10 student. Nothing is saved. <button class="btn btn-soft" id="demoExit" type="button">Exit demo</button></div>
 
   <div class="setup" id="reportDlg" aria-hidden="true">
     <div class="setup-bg" data-close></div>

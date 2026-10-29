@@ -46,3 +46,36 @@ def test_phone_layout_has_no_sideways_scroll(page):
     page.goto(BASE_URL, wait_until="networkidle")
     assert page.evaluate("document.documentElement.scrollWidth") <= 390
     assert page.errors == []
+
+
+def test_demo_mode(page):
+    page.goto(BASE_URL + "/?demo", wait_until="networkidle")
+    page.wait_for_selector(".chapter")
+    assert page.is_visible("#demoBar")
+    assert "%" in page.text_content("#predict")
+    assert page.locator("#badges li.on").count() >= 3
+    # nothing from the demo is saved on the device
+    assert page.evaluate("localStorage.getItem('studynest-v2')") is None
+    page.click("#demoExit")
+    page.wait_for_load_state("networkidle")
+    assert not page.is_visible("#demoBar")
+    assert page.errors == []
+
+
+def test_arts_student_adds_own_chapters(page):
+    page.goto(BASE_URL, wait_until="networkidle")
+    page.click('#setup .step[data-step="0"] [data-go="1"]')
+    page.click('#classChoices [data-cls="11"]')
+    page.click('#groupChoices [data-group="arts"]')
+    assert page.is_disabled("#stepGroupNext")
+    page.click('#electiveChoices [data-el="el-civics"]')
+    page.click('#electiveChoices [data-el="computer"]')
+    page.click("#stepGroupNext")
+    page.click("#setupDone")
+    page.click('#sylSubjects [data-subj="el-civics"]')
+    page.fill("#bookChapters", "1. Introduction to Civics\nCh 2: State and Government\nCitizenship")
+    page.click('[data-act="book-save"]')
+    page.wait_for_selector(".chapter >> text=State and Government")
+    assert page.locator("#chapters .chapter").count() == 3
+    assert page.evaluate("JSON.parse(localStorage.getItem('studynest-v2')).profile.electives") == ["el-civics", "computer"]
+    assert page.errors == []

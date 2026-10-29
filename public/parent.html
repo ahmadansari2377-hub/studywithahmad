@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Family Progress — Study with Ahmad</title>
+  <meta name="description" content="A student's study progress, shared with their family from Study with Ahmad." />
+  <meta name="robots" content="noindex" />
+  <link rel="icon" href="/icons/icon-192.png" />
+  <style>
+    :root { --bg: #f6f4ef; --surface: #fff; --tint: #eeebe3; --ink: #1b1a2e; --muted: #6b6a7d; --line: #e3dfd5; --primary: #5b4bf5; --mint: #1fae86; --coral: #ff6b57; --sun: #f2b02f; color-scheme: light; }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) { --bg: #111019; --surface: #1b1a27; --tint: #16151f; --ink: #f1effa; --muted: #a19fb6; --line: #2c2a3c; --primary: #8b7dff; color-scheme: dark; }
+    }
+    :root[data-theme="dark"] { --bg: #111019; --surface: #1b1a27; --tint: #16151f; --ink: #f1effa; --muted: #a19fb6; --line: #2c2a3c; --primary: #8b7dff; color-scheme: dark; }
+    * { box-sizing: border-box; margin: 0; }
+    body { background: var(--bg); color: var(--ink); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+    main { max-width: 760px; margin: 0 auto; padding: 28px 16px 64px; }
+    a { color: var(--primary); }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; text-decoration: none; color: var(--ink); }
+    .brand img { width: 34px; height: 34px; border-radius: 10px; }
+    h1 { font-size: clamp(28px, 6vw, 40px); line-height: 1.1; margin: 22px 0 4px; letter-spacing: -0.02em; }
+    .muted { color: var(--muted); }
+    .small { font-size: 13.5px; }
+    .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 20px; }
+    .stat { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 14px; }
+    .stat b { display: block; font-size: 28px; line-height: 1.1; }
+    .stat span { font-size: 13px; color: var(--muted); }
+    .card { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 18px; margin-top: 14px; }
+    .card h2 { font-size: 17px; margin-bottom: 12px; }
+    .bars { display: flex; align-items: flex-end; gap: 8px; height: 140px; }
+    .bar { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 6px; height: 100%; min-width: 0; }
+    .bar i { display: block; width: 100%; max-width: 44px; min-height: 3px; border-radius: 8px 8px 4px 4px; background: var(--primary); opacity: 0.85; }
+    .bar.today i { opacity: 1; background: var(--mint); }
+    .bar small { font-size: 12px; color: var(--muted); }
+    .bar em { font-style: normal; font-size: 11.5px; font-weight: 600; }
+    .subj { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+    .subj .top { display: flex; justify-content: space-between; font-size: 14.5px; margin-bottom: 4px; gap: 10px; }
+    .track { position: relative; height: 10px; border-radius: 10px; background: var(--tint); overflow: hidden; }
+    .track i { position: absolute; inset: 0 auto 0 0; border-radius: 10px; }
+    .track .rd { opacity: 0.4; }
+    .note { margin-top: 18px; padding: 14px 16px; border-radius: 14px; background: var(--tint); font-size: 14.5px; }
+    .error { margin-top: 40px; text-align: center; }
+    @media (max-width: 600px) { .grid { grid-template-columns: 1fr 1fr; } }
+  </style>
+</head>
+<body>
+<main>
+  <a class="brand" href="/"><img src="/icons/icon-192.png" alt="" />Study with Ahmad</a>
+  <div id="out"><p class="muted" style="margin-top:40px">Loading…</p></div>
+</main>
+<script>
+  // A read-only page for a student's family. The link (#token) comes from the "Ammi-Abbu link" in the planner.
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const fmt = (m) => (m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`);
+  const out = document.getElementById("out");
+  const token = location.hash.slice(1);
+
+  function ago(iso) {
+    const m = Math.round((Date.now() - new Date(iso)) / 60000);
+    return m < 2 ? "just now" : m < 60 ? `${m} minutes ago` : m < 1440 ? `${Math.round(m / 60)} hours ago` : `${Math.round(m / 1440)} days ago`;
+  }
+  // The planner's "demo" shows a made-up student, so families can see what the page looks like
+  function demo() {
+    const week = Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - 6 + i); return { d: d.toISOString().slice(0, 10), m: [75, 50, 0, 100, 125, 75, 50][i] }; });
+    const exam = new Date(); exam.setDate(exam.getDate() + 23);
+    return { username: "Demo student", updated_at: new Date().toISOString(), share: { cls: 10, board: "PTB", group: "Science (Biology)", pct: 41, read: 52, total: 126, today: 50, streak: 6, week, tasksDone7: 9, badges: 7, predict: 71, exam: { t: "Annual board exams", d: exam.toISOString() },
+      subjects: [["Physics", "#5b4bf5", 50, 25], ["Chemistry", "#ff6b57", 46, 23], ["Biology", "#1fae86", 50, 20], ["Mathematics", "#e6a11f", 42, 17], ["English", "#e05297", 25, 10], ["Urdu", "#8a5cf6", 25, 10]].map(([n, c, p, v]) => ({ n, c, p, v })) } };
+  }
+  function render({ username, share: s, updated_at }) {
+    if (!s || !s.week) { out.innerHTML = `<h1>${esc(username)}</h1><p class="note">Nothing to show yet. Once ${esc(username)} uses the planner, their progress appears here.</p>`; return; }
+    const max = Math.max(60, ...s.week.map((w) => w.m)), weekMins = s.week.reduce((a, w) => a + w.m, 0);
+    const days = s.exam ? Math.max(0, Math.ceil((new Date(s.exam.d) - Date.now()) / 864e5)) : null;
+    const todayKey = new Date().toISOString().slice(0, 10);
+    out.innerHTML = `
+      <h1>${esc(username)}'s studies</h1>
+      <p class="muted small">Class ${esc(s.cls)} · ${esc(s.group)} · ${esc(s.board)}${updated_at ? ` · updated ${ago(updated_at)}` : ""}</p>
+      <div class="grid">
+        <div class="stat"><b>${fmt(s.week[6]?.d === todayKey ? s.week[6].m : 0)}</b><span>studied today</span></div>
+        <div class="stat"><b>${fmt(weekMins)}</b><span>in the last 7 days</span></div>
+        <div class="stat"><b>${s.streak ? "🔥 " + s.streak : "0"}</b><span>day streak</span></div>
+        <div class="stat"><b>${s.pct}%</b><span>of the syllabus read</span></div>
+      </div>
+      <div class="card"><h2>Study time, last 7 days</h2><div class="bars">${s.week.map((w) => `<div class="bar ${w.d === todayKey ? "today" : ""}"><em>${w.m ? fmt(w.m) : ""}</em><i style="height:${(w.m / max) * 100}%"></i><small>${new Date(w.d + "T00:00").toLocaleDateString("en-GB", { weekday: "short" })}</small></div>`).join("")}</div></div>
+      <div class="card"><h2>Syllabus · ${s.read} of ${s.total} chapters read</h2><ul class="subj">${(s.subjects || []).map((x) => `<li><div class="top"><span>${esc(x.n)}</span><span class="muted">${x.p}% read · ${x.v}% revised</span></div><div class="track"><i class="rd" style="width:${x.p}%;background:${esc(x.c)}"></i><i style="width:${x.v}%;background:${esc(x.c)}"></i></div></li>`).join("")}</ul></div>
+      <div class="note">${s.exam ? `🎯 <b>${esc(s.exam.t)}</b> in <b>${days} days</b>. ` : ""}✅ ${s.tasksDone7 || 0} tasks done this week · 🏅 ${s.badges || 0} badges${s.predict ? ` · 🔮 on track for about <b>${s.predict}%</b> (the app's estimate)` : ""}</div>
+      <p class="muted small" style="margin-top:18px">A little encouragement goes a long way: ask what they studied today. 💚 This page shows only study totals, never messages, notes or tasks. ${esc(username)} can switch this link off at any time.</p>`;
+  }
+  if (token === "demo") render(demo());
+  else if (!token) out.innerHTML = '<p class="error muted">This link is missing its code. Ask for the full link again.</p>';
+  else fetch(`/api/parent/${encodeURIComponent(token)}`)
+    .then(async (r) => { const body = await r.json().catch(() => ({})); if (!r.ok) throw new Error(body.detail || "Couldn't load this page. Check the internet and try again."); return body; })
+    .then(render)
+    .catch((e) => { out.innerHTML = `<p class="error muted">${esc(e.message)}</p>`; });
+</script>
+</body>
+</html>

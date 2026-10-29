@@ -19,12 +19,23 @@ A study planner for **Matric (9th, 10th)** and **Intermediate (11th, 12th)** stu
 - **AI Study Buddy** (Google Gemini): explanations, step-by-step numericals and board-style MCQs in English, Roman Urdu or Urdu; 40 requests per student per day.
 - **AI study plan:** a day-by-day plan (two weeks at a time) from your unread chapters and exam date, added to Tasks in one tap.
 - **Entry tests:** MDCAT, ECAT and ECAT (ICS) paper patterns, FSc chapter tracking, mock timers and practice MCQs.
-- **Leaderboard:** opt-in weekly focus minutes, by class or city.
+- **Leaderboard:** opt-in weekly focus minutes, by class or city, plus a city-against-city weekly challenge.
+- **Paper checker:** type an answer or photograph your answer sheet; the AI marks it out of the question's marks like a board examiner (what got marks, what's missing, what a full-marks answer has). Low marks go to the mistake notebook.
+- **Book page → flashcards & MCQs:** photograph any textbook page; get flashcards (added to your deck in one tap) and a quick quiz made only from that page.
+- **Practice papers:** a quick test or full paper in the PTB/FBISE pattern from the chapters you've read (or your weak ones), with a timer, MCQs marked as you tap, "Check my answer" for every written question, and a printable copy with the answer key.
+- **Marks predictor:** an estimated percentage and grade per subject from chapters read/revised, flashcards, study time and your marked tests, with the change that would raise it most.
+- **Badges** (16) and a weekly 10-hour focus challenge.
+- **Ammi-Abbu link:** a private read-only page (`/parent.html#<code>`) the student can send on WhatsApp: study time, last 7 days, syllabus done, streak, next exam. A new link or "switch off" cuts the old one.
+- **Evening reminders:** Web Push notifications (Android, desktop, and iPhone once installed) when revisions or tasks are due or a streak is about to break. Needs `VAPID_PRIVATE_KEY` and `CRON_SECRET` (see below).
+- **Load-shedding mode:** black AMOLED screen and no animations, to save battery on a UPS or a low phone (footer, or the offline banner).
+- **Demo mode:** `/?demo` (or "Try a ready-made demo") opens a filled-in Class 10 student without an account. Nothing is saved.
 - **Password reset:** by a 6-digit email code (if the student added an email), or by the one-time recovery code. Signed-in students can add/change their email and change their password.
 - **Urdu interface:** navigation, headings and main buttons in Urdu (footer switch).
 - **Dark mode**, AMOLED black and five accent colours, and animations throughout (GSAP + Lenis).
 
-Classes and groups: 9th/10th Science (Biology or Computer), and 11th/12th Pre-Medical, Pre-Engineering or ICS.
+Classes and groups: 9th/10th Science (Biology or Computer) or Arts, and 11th/12th Pre-Medical, Pre-Engineering, ICS or Arts (FA).
+
+**Arts / Humanities:** Punjab changed the Matric Arts scheme in 2025 (one Mathematics book for all groups, no separate General Science book), and no official chapter lists for the new elective books are online yet. So Arts students pick their electives (Civics, Economics, Education, Psychology, Computer Science, and others) and type each book's chapters from its contents page; everything else (ticks, revisions, plans, practice papers) then works for those books.
 
 ## Run it locally
 
@@ -88,6 +99,14 @@ The site's **Get the app** section offers:
 
 Any other SMTP service works too: also set `SMTP_HOST`, `SMTP_PORT` (465 = SSL, 587 = STARTTLS) and optionally `SMTP_FROM`.
 
+## Reminders (Web Push, free)
+
+1. Make a key on your PC: `uv run vapid-key`. It prints `VAPID_PRIVATE_KEY=...`.
+2. In Vercel → **study-with-ahmad** → Settings → Environment Variables, add `VAPID_PRIVATE_KEY` (that value) and `CRON_SECRET` (any long random text, e.g. from `python -c "import secrets; print(secrets.token_urlsafe(32))"`).
+3. Redeploy. `vercel.json` has a daily cron (12:00 UTC = 5 pm in Pakistan) that calls `/api/cron/remind`; Vercel sends `CRON_SECRET` with it, and each student who switched reminders on gets at most one nudge.
+
+Keep the same key: a new one stops reminders for everyone already subscribed (they'd switch reminders off and on again).
+
 ## Security
 
 - Passwords are stored as scrypt hashes, never as plain text.
@@ -105,6 +124,7 @@ uv run --with pytest --with httpx pytest
 ```
 
 - `tests/test_api.py`: sign-up, login limits, planner saving, recovery-code and email resets, account settings, and that private files are never served. It uses `DATABASE_URL` (or `.env`); every test account is called `zz_test_...` and deleted afterwards.
+- `tests/test_features.py`: paper checker, page-to-cards and practice papers (with a fake Gemini), parent links, the city board, push encryption (decrypted the way a browser does) and the reminder cron.
 - `tests/test_static.py`: JavaScript syntax and `tests/check_syllabus.js` (every board, class and group has a chapter list for each of its subjects).
 - `tests/test_ui.py`: a browser test. Start `uv run website`, then run it with `BASE_URL=http://127.0.0.1:8000 PW_CHANNEL=msedge uv run --with pytest --with httpx --with playwright pytest tests/test_ui.py` (`msedge` uses the Edge already installed on Windows).
 
@@ -121,7 +141,10 @@ GitHub Actions (`.github/workflows/tests.yml`) runs all of them on every push, a
 | File | What it does |
 |---|---|
 | `public/index.html`, `public/study.css`, `public/study.js` | The planner (page, styles, behaviour) |
-| `public/syllabus.js` | PTB and FBISE chapter lists and starter flashcards |
+| `public/syllabus.js` | PTB and FBISE chapter lists, Arts electives and starter flashcards |
+| `public/parent.html` | The read-only family page behind an Ammi-Abbu link |
+| `public/sw.js` | Service worker: offline use and reminder notifications |
+| `vercel.json` | The daily reminder cron |
 | `src/website/server.py` | FastAPI server: accounts and planner storage in Postgres |
 | `src/website/__init__.py` | `uv run website` entry point (local) |
 | `app.py` | Vercel entry point |
