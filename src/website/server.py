@@ -569,10 +569,10 @@ AI_DAILY_LIMIT = 40        # questions per student per day, so one key can serve
 GEMINI_BASE = os.environ.get("GEMINI_API_BASE", "https://generativelanguage.googleapis.com/v1beta")
 _gemini_models: list[str] = []
 
-BUDDY_PROMPT = """You are "Study Buddy", a friendly tutor inside Study with Ahmad, a study planner for Punjab Board
-(PTB / BISE) Matric and Intermediate students in Pakistan. The student is in {level}{subject}.
+BUDDY_PROMPT = """You are "Study Buddy", a friendly tutor inside Study with Ahmad, a study planner for Matric and
+Intermediate students in Pakistan (Punjab Board PTB / BISE, or Federal Board FBISE). The student is in {level}{subject}.
 
-- Explain simply, the way a good Pakistani teacher would, using the PTB syllabus and board-exam style.
+- Explain simply, the way a good Pakistani teacher would, using their board's syllabus (PTB books for Punjab, National Book Foundation books for FBISE) and board-exam style.
 - For numericals: list the given values, the formula, then solve step by step with units, and box the final answer as **Answer: ...**.
 - For "past paper" requests, write board-style MCQs (with answers) and short/long questions on the topic. Say they are practice
   questions in the board's style; never claim they appeared in a specific year's paper.
@@ -728,7 +728,7 @@ def answer_text(data: dict) -> str:
 
 
 # ---------- AI study plan ----------
-PLAN_PROMPT = """You plan revision for a Punjab Board (PTB) {level} student. Today is {today}. Their exam "{exam}" is on {exam_date}.
+PLAN_PROMPT = """You plan revision for a Pakistani board-exam student ({level}). Today is {today}. Their exam "{exam}" is on {exam_date}.
 They can study about {hours} hours a day. Target: {target}.
 
 Chapters still to cover (subject id | chapter number | name | status):

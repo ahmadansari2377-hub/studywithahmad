@@ -4,11 +4,11 @@
 
 **Live:** https://study-with-ahmad.vercel.app
 
-A study planner for **Matric (9th, 10th)** and **Intermediate (11th, 12th)** students of the Punjab Textbook Board (PTB / PCTB).
+A study planner for **Matric (9th, 10th)** and **Intermediate (11th, 12th)** students of the **Punjab Board** (PTB / PCTB books) and the **Federal Board** (FBISE, National Book Foundation books).
 
 ## Features
 
-- **Syllabus:** every chapter of your PTB books (2026–27 editions) for Physics, Chemistry, Biology, Mathematics and Computer Science. Mark chapters as *Read* or *Revised*, or add them to your task list.
+- **Syllabus:** every chapter of your PTB or FBISE/NBF books (2026–27 editions) for Physics, Chemistry, Biology, Mathematics and Computer Science, plus English, Urdu, Islamiat, Pakistan Studies and Tarjama-tul-Quran. Pick the board in the first setup step. Mark chapters as *Read* or *Revised*, or add them to your task list.
 - **Focus timer:** Pomodoro sessions with a subject picked for each one.
 - **Tasks:** due dates and priorities.
 - **Weekly timetable:** the block happening right now is highlighted.
@@ -107,9 +107,9 @@ Any other SMTP service works too: also set `SMTP_HOST`, `SMTP_PORT` (465 = SSL, 
 | File | What it does |
 |---|---|
 | `public/index.html`, `public/study.css`, `public/study.js` | The planner (page, styles, behaviour) |
-| `public/syllabus.js` | PTB chapter lists and starter flashcards |
+| `public/syllabus.js` | PTB and FBISE chapter lists and starter flashcards |
 | `src/website/server.py` | FastAPI server: accounts and planner storage in Postgres |
 | `src/website/__init__.py` | `uv run website` entry point (local) |
 | `app.py` | Vercel entry point |
 
-Chapter names follow the 2026–27 PTB editions. Always check them against your printed textbook. The official books are free at [pctb.punjab.gov.pk](https://pctb.punjab.gov.pk/).
+Chapter names follow the 2026–27 PTB and NBF (FBISE) editions. FBISE lists were gathered from study sites (studyplusplus.com, cross-checked with others) and the subject plan follows FBISE's Inclusive Scheme of Studies 2024 (Islamiat in 9th/11th, Pakistan Studies examined in 10th/12th). FBISE chapter ticks are saved separately from PTB ones. Always check them against your printed textbook. The official books are free at [pctb.punjab.gov.pk](https://pctb.punjab.gov.pk/).

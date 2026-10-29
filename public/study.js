@@ -1,5 +1,5 @@
 // =====================================================================
-//  Study with Ahmad — study planner for Matric & Intermediate (Punjab Board)
+//  Study with Ahmad — study planner for Matric & Intermediate (Punjab Board and Federal Board)
 //  All data lives in this browser (localStorage).
 // =====================================================================
 const $ = (s, r = document) => r.querySelector(s);
@@ -168,6 +168,21 @@ function splitWords(el) {
 
 // ---------- Subjects ----------
 const levelOf = (cls) => (cls <= 10 ? "matric" : "inter");
+// Punjab (PTB) or Federal (FBISE) books; planners made before boards existed are Punjab
+function boardOf(p = state.profile) { return BOARDS[p?.board] || BOARDS.ptb; }
+function useBoard() {
+  const b = boardOf();
+  SYLLABUS = b.syllabus;
+  COMPULSORY = b.compulsory;
+  const link = $("#bookLink");
+  if (link) {
+    link.href = b.books;
+    $("#bookLinkTitle").textContent = `Read the ${b.short} books free →`;
+    $("#bookLinkNote").textContent = `${b.short === "PTB" ? "Punjab Curriculum & Textbook Board" : "Federal Board (National Book Foundation books)"} website. Chapter names here follow the 2026–27 editions — always check against your own textbook.`;
+  }
+  return b;
+}
+const levelText = () => `Class ${state.profile.cls}, ${boardOf().name} (${groupOf().name})`;
 function groupOf(p = state.profile) { return p && GROUPS[levelOf(p.cls)].find((g) => g.id === p.group); }
 function subjects() {
   const g = groupOf();
@@ -241,12 +256,13 @@ function goStep(n) {
   $$("#stepDots i").forEach((d, i) => d.classList.toggle("on", i <= n));
   if (n === 3) {
     const g = groupOf(pick);
-    $("#stepSummary").innerHTML = g ? `<p><b>Class ${pick.cls}</b> · ${g.name}</p><div class="chips">${[...g.subjects, ...COMPULSORY[pick.cls]].map((id) => `<span class="tag"><i class="dot" style="background:${SUBJECT_INFO[id].color}"></i>${SUBJECT_INFO[id].name}</span>`).join("")}</div><p class="muted small">Every PTB chapter for these books, plus starter flashcards, is ready to go.</p>` : "";
+    const bd = boardOf(pick);
+    $("#stepSummary").innerHTML = g ? `<p><b>Class ${pick.cls}</b> · ${g.name} · ${bd.name}</p><div class="chips">${[...g.subjects, ...bd.compulsory[pick.cls]].map((id) => `<span class="tag"><i class="dot" style="background:${SUBJECT_INFO[id].color}"></i>${SUBJECT_INFO[id].name}</span>`).join("")}</div><p class="muted small">Every ${bd.short} chapter for these books, plus starter flashcards, is ready to go.</p>` : "";
   }
   if (A) gsap.fromTo($$(`.step[data-step="${n}"] > *`), { y: 20, opacity: 0 }, { y: 0, opacity: 1, stagger: 0.06, duration: 0.6, ease: "expo.out" });
 }
 function openSetup() {
-  pick = state.profile ? { ...state.profile } : {};
+  pick = state.profile ? { ...state.profile } : { board: "ptb" };
   renderSetup();
   setup.classList.add("open");
   setup.setAttribute("aria-hidden", "false");
@@ -262,6 +278,7 @@ function closeSetup(force) {
 }
 function renderSetup() {
   $$("#classChoices button").forEach((b) => b.classList.toggle("active", +b.dataset.cls === pick.cls));
+  $$("#boardChoices button").forEach((b) => b.classList.toggle("active", b.dataset.board === (pick.board || "ptb")));
   const groups = pick.cls ? GROUPS[levelOf(pick.cls)] : [];
   if (pick.cls && !groups.some((g) => g.id === pick.group)) pick.group = null;
   $("#groupChoices").innerHTML = groups.map((g) => `
@@ -272,18 +289,20 @@ function renderSetup() {
   $("#stepGroupNext").disabled = !(pick.cls && pick.group);
 }
 $("#classChoices").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) { pick.cls = +b.dataset.cls; renderSetup(); setTimeout(() => goStep(2), 280); } });
+$("#boardChoices").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) { pick.board = b.dataset.board; renderSetup(); } });
 $("#groupChoices").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) { pick.group = b.dataset.group; renderSetup(); setTimeout(() => goStep(3), 280); } });
 $("#setupBg").onclick = closeSetup;
 $("#classBtn").onclick = openSetup;
 $("#setupDone").onclick = () => {
   const first = !state.profile;
-  state.profile = { cls: pick.cls, group: pick.group };
+  state.profile = { cls: pick.cls, group: pick.group, board: pick.board || "ptb" };
+  useBoard();
   seedFor(first);
   save();
   sylSubject = null;
   renderAll(true);
   closeSetup();
-  toast(`Planner ready for Class ${pick.cls} · ${groupOf().name}`);
+  toast(`Planner ready for Class ${pick.cls} · ${groupOf().name} · ${boardOf().short}`);
   confetti(innerWidth / 2, innerHeight / 3, 120);
 };
 
@@ -660,7 +679,8 @@ document.addEventListener("click", (e) => {
 //  Syllabus
 // =====================================================================
 let sylSubject = null;
-const sylKey = (s, n) => `${state.profile.cls}-${s}-${n}`;
+const boardKey = () => (state.profile?.board === "fbise" ? "fb-" : ""); // FBISE ticks get their own keys
+const sylKey = (s, n) => `${boardKey()}${state.profile.cls}-${s}-${n}`;
 function bookOf(s) { return state.profile && SYLLABUS[state.profile.cls][s]; }
 function bookProgress(s) {
   const b = bookOf(s);
@@ -690,7 +710,7 @@ function renderChapters(animate) {
   const b = bookOf(sylSubject), info = SUBJECT_INFO[sylSubject];
   const p = bookProgress(sylSubject);
   $("#sylTitle").textContent = `${info.name} — Class ${state.profile.cls}`;
-  $("#sylMeta").textContent = `${b.chapters.length} chapters · ${p.read} read · ${p.rev} revised · PTB 2026–27 edition`;
+  $("#sylMeta").textContent = `${b.chapters.length} chapters · ${p.read} read · ${p.rev} revised · ${boardOf().short} 2026–27 edition`;
   $("#chapters").innerHTML = b.chapters.map((name, i) => {
     const n = b.start + i, pr = state.syl[sylKey(sylSubject, n)] || {};
     return `<li class="chapter ${pr.v ? "revised" : ""}" style="--c:${info.color}" data-n="${n}">
@@ -720,7 +740,7 @@ function updateSubjectProgress(s) {
   const small = $(`[data-prog="${s}"]`), bar = $(`[data-bar="${s}"]`);
   if (small) small.textContent = `${p.read}/${p.total} chapters read`;
   if (bar) { if (A) gsap.to(bar, { scaleX: p.total ? p.read / p.total : 0, duration: 0.9, ease: "expo.out" }); else bar.style.transform = `scaleX(${p.read / p.total})`; }
-  $("#sylMeta").textContent = `${p.total} chapters · ${p.read} read · ${p.rev} revised · PTB 2026–27 edition`;
+  $("#sylMeta").textContent = `${p.total} chapters · ${p.read} read · ${p.rev} revised · ${boardOf().short} 2026–27 edition`;
   renderOverall();
 }
 $("#sylSubjects").addEventListener("click", (e) => {
@@ -1291,6 +1311,7 @@ function renderSelects() {
   bs.value = bcur;
 }
 function renderAll(animate) {
+  useBoard();
   renderHeader();
   renderStats(animate);
   if (!state.profile) return;
@@ -1759,7 +1780,7 @@ async function askBuddy(question, image = "") {
       method: "POST",
       body: JSON.stringify({
         question, image, language: buddyLang, history: buddyHistory.slice(-6),
-        level: state.profile ? `Class ${state.profile.cls} (${groupOf().name})` : "",
+        level: state.profile ? levelText() : "",
         subject: s ? subj(s).name : "",
       }),
     });
@@ -1836,7 +1857,7 @@ $("#planForm").addEventListener("submit", async (e) => {
       method: "POST",
       body: JSON.stringify({
         exam: ex.title, exam_date: dayKey(new Date(ex.date)), hours: +$("#planHours").value || 3, target: $("#planTarget").value,
-        level: `Class ${state.profile.cls} (${groupOf().name})`, language: typeof buddyLang === "string" ? buddyLang : "en", chapters,
+        level: levelText(), language: typeof buddyLang === "string" ? buddyLang : "en", chapters,
       }),
     });
     renderPlan();
@@ -1913,7 +1934,7 @@ function etInfo(p) { return p.subject ? { name: SUBJECT_INFO[p.subject].name, co
 function etChapters(s) {
   return [11, 12].flatMap((cls) => {
     const b = SYLLABUS[cls][s];
-    return b ? b.chapters.map((name, i) => ({ cls, n: b.start + i, name, key: `${cls}-${s}-${b.start + i}` })) : [];
+    return b ? b.chapters.map((name, i) => ({ cls, n: b.start + i, name, key: `${boardKey()}${cls}-${s}-${b.start + i}` })) : [];
   });
 }
 function renderEntry() {

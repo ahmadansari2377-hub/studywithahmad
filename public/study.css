@@ -1332,6 +1332,12 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: man
 .code-box { display: flex; align-items: center; gap: 10px; margin: 6px 0 16px; padding: 12px 14px; border-radius: 14px; background: var(--tint); border: 1.5px dashed var(--primary); }
 .code-box code { flex: 1; font-family: ui-monospace, Consolas, monospace; font-size: 22px; font-weight: 700; letter-spacing: 0.08em; color: var(--ink); }
 .auth-actions { flex-wrap: wrap; }
+.board-pick { display: flex; gap: 8px; margin-bottom: 12px; }
+.board-pick button { flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 14px; border-radius: 14px; border: 1.5px solid var(--line); background: var(--surface); text-align: left; transition: border-color 0.3s, background 0.3s; }
+.board-pick button small { color: var(--muted); font-size: 12px; }
+#boardChoices button:not(.active) { border-color: var(--line); box-shadow: none; }
+.board-pick button.active { border-color: var(--primary); background: var(--tint); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent); }
+.board-pick button.active b::after { content: " ✓"; color: var(--primary); }
 .reset-row { display: flex; gap: 8px; }
 .reset-row .input { flex: 1; min-width: 0; }
 .reset-row .btn { white-space: nowrap; }
@@ -1341,7 +1347,7 @@ html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: man
 .acct-more summary { cursor: pointer; font-weight: 600; font-size: 14.5px; }
 .acct-more form { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
 #authEmail[hidden] { display: none; }
-@media (max-width: 420px) { .reset-row { flex-direction: column; } }
+@media (max-width: 420px) { .reset-row { flex-direction: column; } .reset-row .input { flex: none; } }
 
 /* ---------- AI study plan ---------- */
 .plan { margin-top: 26px; }

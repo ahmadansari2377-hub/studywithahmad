@@ -144,7 +144,7 @@
     <section class="section" id="syllabus">
       <div class="container">
         <div class="section-head">
-          <div><p class="kicker">01 · Syllabus</p><h2 class="split">Your PTB books, <em>chapter by chapter.</em></h2></div>
+          <div><p class="kicker">01 · Syllabus</p><h2 class="split">Your textbooks, <em>chapter by chapter.</em></h2></div>
           <div class="syl-overall reveal">
             <svg class="mini-ring" viewBox="0 0 120 120"><circle class="mr-bg" cx="60" cy="60" r="52" /><circle class="mr-fg" id="overallRing" cx="60" cy="60" r="52" /></svg>
             <div><b id="overallPct">0%</b><span id="overallText">of your syllabus read</span></div>
@@ -172,10 +172,10 @@
                 <li><b>Every book is here</b> — your group subjects plus English, Urdu, Islamiat or Pakistan Studies, and Tarjama-tul-Quran.</li>
               </ul>
             </div>
-            <a class="panel ebook reveal" href="https://pctb.punjab.gov.pk/" target="_blank" rel="noopener">
+            <a class="panel ebook reveal" id="bookLink" href="https://pctb.punjab.gov.pk/" target="_blank" rel="noopener">
               <span>Official source</span>
-              <b>Read the PTB books free →</b>
-              <small>Punjab Curriculum &amp; Textbook Board website. Chapter names here follow the 2026–27 editions — always check against your own textbook.</small>
+              <b id="bookLinkTitle">Read the PTB books free →</b>
+              <small id="bookLinkNote">Punjab Curriculum &amp; Textbook Board website. Chapter names here follow the 2026–27 editions — always check against your own textbook.</small>
             </a>
           </aside>
         </div>
@@ -473,7 +473,7 @@
       <div class="container">
         <div class="section-head">
           <div><p class="kicker">08 · AI Study Buddy</p><h2 class="split">Stuck? <em>Just ask.</em></h2></div>
-          <p class="head-note reveal">Your AI tutor for the PTB syllabus: simple explanations, numericals solved step by step, and board-style practice questions. In English, Roman Urdu or Urdu.</p>
+          <p class="head-note reveal">Your AI tutor for the PTB and FBISE syllabus: simple explanations, numericals solved step by step, and board-style practice questions. In English, Roman Urdu or Urdu.</p>
         </div>
         <div class="panel buddy reveal">
           <div class="buddy-bar">
@@ -642,13 +642,17 @@
       <div class="step" data-step="0">
         <p class="kicker">Step 1 of 4</p>
         <h2 id="setupTitle">Welcome to Study with Ahmad 👋</h2>
-        <p class="muted step-text">Your free planner for Punjab Board Matric and Inter: every PTB chapter, a focus timer, tasks, timetable, exam countdowns and flashcards. Set it up in three quick steps.</p>
+        <p class="muted step-text">Your free planner for Matric and Inter (Punjab Board and Federal Board): every chapter of your books, a focus timer, tasks, timetable, exam countdowns and flashcards. Set it up in three quick steps.</p>
         <button class="btn btn-primary btn-wide glow-border" data-go="1">Let's start</button>
         <p class="setup-alt">Already have an account? <button class="link-btn" id="setupSignIn">Sign in</button></p>
       </div>
       <div class="step" data-step="1">
         <p class="kicker">Step 2 of 4</p>
         <h2>Which class are you in?</h2>
+        <div class="board-pick" id="boardChoices" role="group" aria-label="Board">
+          <button data-board="ptb" class="active"><b>Punjab Board</b><small>PTB books</small></button>
+          <button data-board="fbise"><b>Federal Board</b><small>FBISE · NBF books</small></button>
+        </div>
         <div class="choice-row" id="classChoices">
           <button data-cls="9"><b>9th</b><small>Matric · Part 1</small></button>
           <button data-cls="10"><b>10th</b><small>Matric · Part 2</small></button>
