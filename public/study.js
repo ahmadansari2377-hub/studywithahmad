@@ -484,8 +484,9 @@ $("#authTabs").addEventListener("click", (e) => { const b = e.target.closest("bu
 $("#setupSignIn").onclick = () => { closeSetup(true); authTab = "login"; openAuth(); };
 $("#authSkip").onclick = () => { try { sessionStorage.setItem("swa-guest", "1"); } catch (e) {} closeAuth(); };
 // On arrival: sign in first (once per visit), then pick a class if this device has none yet
+// Reached twice for a signed-in student (planner loaded, intro finished), in either order: the second must not restart the wizard
 function openStart() {
-  if (!state.profile && !pulling) openSetup();
+  if (!state.profile && !pulling && !setup.classList.contains("open")) openSetup();
 }
 // After a few real actions (ticking chapters, adding tasks…), suggest saving to the cloud — once a day at most
 let actions = 0;
@@ -1749,7 +1750,7 @@ if (token && !DEMO) {
     .catch(() => setSync("error"))
     .finally(() => {
       pulling = false;
-      if (!state.profile) openSetup();
+      if (!state.profile) openStart();
       else if (setup.classList.contains("open")) closeSetup();
     });
 }
