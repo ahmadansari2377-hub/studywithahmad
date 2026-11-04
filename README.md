@@ -126,6 +126,7 @@ uv run --with pytest --with httpx pytest
 - `tests/test_api.py`: sign-up, login limits, planner saving, recovery-code and email resets, account settings, and that private files are never served. It uses `DATABASE_URL` (or `.env`); every test account is called `zz_test_...` and deleted afterwards.
 - `tests/test_features.py`: paper checker, page-to-cards and practice papers (with a fake Gemini), parent links, the city board, push encryption (decrypted the way a browser does) and the reminder cron.
 - `tests/test_static.py`: JavaScript syntax and `tests/check_syllabus.js` (every board, class and group has a chapter list for each of its subjects).
+- `tests/test_sync.py`: Last-Write-Wins chapter sync, including a delayed offline change arriving after a newer one from another device, time zones and wrong clocks.
 - `tests/test_ui.py`: a browser test. Start `uv run website`, then run it with `BASE_URL=http://127.0.0.1:8000 PW_CHANNEL=msedge uv run --with pytest --with httpx --with playwright pytest tests/test_ui.py` (`msedge` uses the Edge already installed on Windows).
 
 GitHub Actions (`.github/workflows/tests.yml`) runs all of them on every push, against an empty throwaway Postgres, never the live database. A red ✗ next to a commit on GitHub means something broke.
@@ -133,7 +134,7 @@ GitHub Actions (`.github/workflows/tests.yml`) runs all of them on every push, a
 ## Known limitations
 
 - **Email reset needs the email settings below.** Without them, students reset with their recovery code. A student who lost both can send a **Koi masla?** message; after checking it's really them, run `uv run reset-code <username>` on your PC (uses `.env`) and give them the new code it prints.
-- **Last save wins.** Each device uploads the whole planner, so if the same account is edited on a phone and a laptop at the same moment, the device that saves last overwrites the other. Changes made offline are kept and uploaded when the connection returns.
+- **Syncing between devices.** Chapter progress (read, revised) is safe: each change carries the time the student made it and `/api/sync` keeps the latest one per chapter, whatever order the devices reconnect in, so a phone coming back online can't undo something newer. It trusts device clocks: a clock running ahead is pulled back to the server's time, but a device whose clock is well behind can lose a change it made after one from another device. Everything else (tasks, timetable, exams, flashcards, settings) is still uploaded as one planner, so there the device that saves last overwrites the other.
 - **Shared Wi-Fi.** The 30-attempts-per-connection limit counts everyone behind the same public IP (for example a school or event network) together; it is set high enough for a busy room.
 
 ## Project files

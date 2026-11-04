@@ -31,7 +31,7 @@ from fastapi.responses import FileResponse
 import psycopg
 from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
-from pydantic import BaseModel
+from pydantic import AwareDatetime, BaseModel, Field, field_validator
 
 ROOT = Path(__file__).resolve().parents[2]
 PUBLIC = ROOT / "public"
@@ -43,6 +43,8 @@ MAX_USER_FAILS = 3         # wrong passwords allowed per account...
 MAX_IP_FAILS = 30          # ...and per internet connection (high enough for a whole school or event on one Wi-Fi)
 LOCK_MINUTES = 15          # before trying again
 MAX_SIGNUPS_PER_HOUR = 40  # new accounts per internet connection: stops bots, still lets a whole class sign up on one Wi-Fi
+MAX_SYNC_CHANGES = 500     # chapter changes in one /api/sync request (the page sends bigger queues in several requests)
+MAX_USER_CHAPTERS = 5000   # chapter rows per account: far more than every class and board together
 
 # Only these files from public/ are served — never .env, .git or source code.
 # (On Vercel the CDN serves public/ directly; this is the local / fallback path.)
@@ -175,6 +177,19 @@ CREATE TABLE IF NOT EXISTS push_subs (
     p256dh     TEXT NOT NULL,
     auth       TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- One row per chapter per student, so two devices are compared chapter by chapter (see /api/sync).
+-- updated_at is when the student did it on their device, not when the server heard about it.
+CREATE TABLE IF NOT EXISTS chapter_progress (
+    user_id      BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    chapter_id   TEXT NOT NULL,
+    is_completed BOOLEAN NOT NULL,
+    is_revised   BOOLEAN NOT NULL DEFAULT false,
+    read_on      TEXT,
+    revised_on   TEXT,
+    revisions    INT NOT NULL DEFAULT 0,
+    updated_at   TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (user_id, chapter_id)
 );
 """
 
@@ -568,7 +583,7 @@ def logout(user: dict = Depends(current_user)):
 def me(user: dict = Depends(current_user)):
     with db() as conn:
         email = conn.execute("SELECT email FROM users WHERE id = %s", (user["id"],)).fetchone()[0]
-    return {"username": user["username"], "email": mask_email(email) if email else "", "email_reset": mail_ready()}
+    return {"id": user["id"], "username": user["username"], "email": mask_email(email) if email else "", "email_reset": mail_ready()}
 
 
 def admin_code():
@@ -590,9 +605,15 @@ def admin_code():
 def get_state(user: dict = Depends(current_user)):
     with db() as conn:
         row = conn.execute("SELECT data, updated_at FROM planner_data WHERE user_id = %s", (user["id"],)).fetchone()
+        chapters = chapter_rows(conn, user["id"])
     if not row:
         return {"data": None, "updated_at": None}
-    return {"data": row[0], "updated_at": row[1].isoformat()}
+    data = row[0]
+    if chapters:
+        # The planner blob is uploaded whole and may be older than these rows, so the rows win.
+        # A chapter with no row yet (last changed before /api/sync existed) keeps its value from the blob.
+        data["syl"] = {**(data.get("syl") or {}), **{c["chapter_id"]: syl_entry(c) for c in chapters}}
+    return {"data": data, "updated_at": row[1].isoformat()}
 
 
 @app.put("/api/state")
@@ -607,6 +628,114 @@ def put_state(body: StateIn, user: dict = Depends(current_user)):
             (user["id"], Jsonb(body.data)),
         ).fetchone()[0]
     return {"updated_at": updated.isoformat()}
+
+
+# ---------- Chapter sync: Last-Write-Wins between devices ----------
+# Every chapter change carries the time the student made it on their device, online or offline. The server keeps
+# whichever change happened last, whatever order the requests arrive in:
+#   newer than the stored row  -> saved
+#   older or the same          -> discarded, still 200 OK, and the stored row is sent back so the device can correct itself
+# So a phone that was offline at 12:00 and reconnects at 18:00 can't undo what the laptop did at 12:05, and a retried
+# request changes nothing. Times are compared as instants, so devices on +05:00 and on UTC compare correctly.
+CHAPTER_COLUMNS = "chapter_id, is_completed, is_revised, read_on, revised_on, revisions, updated_at"
+
+
+class ChapterChange(BaseModel):
+    """One chapter's state after the student changed it. chapter_id is the page's sylKey(), e.g. "9-physics-3"."""
+
+    chapter_id: str = Field(min_length=1, max_length=120)
+    is_completed: bool  # the "Read" tick
+    updated_at: AwareDatetime  # when the student did it; a time with no timezone is ambiguous, so it gets a 422
+    is_revised: bool = False
+    read_on: str | None = Field(default=None, max_length=10)  # YYYY-MM-DD on the student's calendar
+    revised_on: str | None = Field(default=None, max_length=10)
+    revisions: int = Field(default=0, ge=0, le=100_000)  # how many times revised, for the spaced-repetition gaps
+
+    @field_validator("updated_at")
+    @classmethod
+    def in_utc(cls, value: dt.datetime) -> dt.datetime:
+        try:
+            return value.astimezone(dt.UTC)
+        except OverflowError:  # e.g. year 1 at +05:00 is before the first date Python can hold
+            raise ValueError("updated_at is out of range") from None
+
+
+class SyncIn(BaseModel):
+    """A device's queue of changes: one chapter when online, possibly many after a long time offline."""
+
+    changes: list[ChapterChange] = Field(max_length=MAX_SYNC_CHANGES)
+
+
+def chapter_row(row: tuple) -> dict:
+    return dict(zip(CHAPTER_COLUMNS.split(", "), row)) | {"updated_at": row[6].astimezone(dt.UTC).isoformat()}
+
+
+def chapter_rows(conn, user_id: int) -> list[dict]:
+    rows = conn.execute(f"SELECT {CHAPTER_COLUMNS} FROM chapter_progress WHERE user_id = %s", (user_id,)).fetchall()
+    return [chapter_row(r) for r in rows]
+
+
+def syl_entry(c: dict) -> dict:
+    """A row in the shape the page keeps in state.syl."""
+    return {"r": c["is_completed"], "v": c["is_revised"], "rAt": c["read_on"], "vAt": c["revised_on"], "n": c["revisions"], "t": c["updated_at"]}
+
+
+def own_sync_path(user_id: int, user: dict):
+    """The id in the address must be the signed-in student's, or anyone could overwrite anyone's progress."""
+    if user_id != user["id"]:
+        raise HTTPException(403, "That isn't your planner")
+
+
+@app.get("/api/sync/{user_id}")
+def get_chapters(user_id: int, user: dict = Depends(current_user)):
+    """Every synced chapter: how a device that was offline picks up what the others did meanwhile."""
+    own_sync_path(user_id, user)
+    with db() as conn:
+        return {"chapters": chapter_rows(conn, user_id)}
+
+
+@app.post("/api/sync/{user_id}")
+def sync_chapters(user_id: int, body: SyncIn, user: dict = Depends(current_user)):
+    """Apply a device's changes by Last-Write-Wins. Results list the stored row per chapter; applied=false means discarded."""
+    own_sync_path(user_id, user)
+    now = dt.datetime.now(dt.UTC)
+    results = []
+    with db() as conn:
+        # Same order in every request, so two devices syncing together can't deadlock on each other's rows
+        for change in sorted(body.changes, key=lambda c: c.chapter_id):
+            # A device whose clock runs ahead must not win every future conflict, so no change can be later than now
+            when = min(change.updated_at, now)
+            # The compare and the write are one statement (the WHERE below), so requests racing on this row can't
+            # both pass the check. If the stored row is newer or equal, nothing is written and nothing is returned.
+            row = conn.execute(
+                f"""INSERT INTO chapter_progress (user_id, chapter_id, is_completed, is_revised, read_on, revised_on, revisions, updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (user_id, chapter_id) DO UPDATE SET
+                        is_completed = EXCLUDED.is_completed, is_revised = EXCLUDED.is_revised, read_on = EXCLUDED.read_on,
+                        revised_on = EXCLUDED.revised_on, revisions = EXCLUDED.revisions, updated_at = EXCLUDED.updated_at
+                    WHERE chapter_progress.updated_at < EXCLUDED.updated_at
+                    RETURNING {CHAPTER_COLUMNS}""",
+                (user_id, change.chapter_id, change.is_completed, change.is_revised, change.read_on, change.revised_on, change.revisions, when),
+            ).fetchone()
+            applied = row is not None
+            if not applied:
+                row = conn.execute(
+                    f"SELECT {CHAPTER_COLUMNS} FROM chapter_progress WHERE user_id = %s AND chapter_id = %s", (user_id, change.chapter_id)
+                ).fetchone()
+            results.append(chapter_row(row) | {"applied": applied})
+        if conn.execute("SELECT count(*) FROM chapter_progress WHERE user_id = %s", (user_id,)).fetchone()[0] > MAX_USER_CHAPTERS:
+            conn.rollback()
+            raise HTTPException(413, "Too many chapters")
+    return {"results": results}
+
+
+@app.delete("/api/sync/{user_id}")
+def clear_chapters(user_id: int, user: dict = Depends(current_user)):
+    """Used by "delete all my data": without this the rows would bring the ticks back on the next load."""
+    own_sync_path(user_id, user)
+    with db() as conn:
+        conn.execute("DELETE FROM chapter_progress WHERE user_id = %s", (user_id,))
+    return {"ok": True}
 
 
 # ---------- AI Study Buddy (Google Gemini) ----------

@@ -79,3 +79,78 @@ def test_arts_student_adds_own_chapters(page):
     assert page.locator("#chapters .chapter").count() == 3
     assert page.evaluate("JSON.parse(localStorage.getItem('studynest-v2')).profile.electives") == ["el-civics", "computer"]
     assert page.errors == []
+
+
+def test_two_devices_and_the_sync_status(make_user):
+    """The offline conflict in real browsers: the phone's older tick must lose to the laptop's newer untick, on every device."""
+    from playwright.sync_api import sync_playwright
+
+    name, _, token = make_user()
+    sign_in = f"localStorage.setItem('studynest-token', {token!r}); localStorage.setItem('studynest-user', {name!r});"
+    status = "#syncStatus"
+    tick = "#chapters .chapter >> nth=0 >> .toggle.read"
+
+    def synced(pg):
+        pg.wait_for_selector(f'{status}[data-state="synced"]', timeout=30_000)
+        assert pg.text_content(status).strip() == "Changes saved"
+
+    def is_ticked(pg):
+        return "on" in pg.get_attribute(tick, "class").split()
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(channel=os.environ.get("PW_CHANNEL") or None, headless=True)
+        phone_ctx, laptop_ctx = browser.new_context(), browser.new_context()
+        phone_ctx.add_init_script(sign_in)
+        laptop_ctx.add_init_script(sign_in)
+        phone, laptop = phone_ctx.new_page(), laptop_ctx.new_page()
+        errors = []
+        phone.on("pageerror", lambda e: errors.append(str(e)))
+        laptop.on("pageerror", lambda e: errors.append(str(e)))
+
+        phone.goto(BASE_URL, wait_until="networkidle")
+        phone.click('#setup .step[data-step="0"] [data-go="1"]')
+        phone.click('#boardChoices [data-board="ptb"]')
+        phone.click('#classChoices [data-cls="9"]')
+        phone.click("#groupChoices button >> nth=0")
+        phone.click("#setupDone")
+        phone.wait_for_selector(".chapter")
+        synced(phone)
+        laptop.goto(BASE_URL, wait_until="networkidle")
+        laptop.wait_for_selector(".chapter")
+        synced(laptop)
+        laptop.set_viewport_size({"width": 360, "height": 700})  # the pill must not push a small phone sideways
+        assert laptop.evaluate("document.documentElement.scrollWidth") <= 360
+        laptop.set_viewport_size({"width": 1280, "height": 720})  # phone sizes show one tab at a time, which can hide the chapters
+
+        # The phone goes offline and ticks the chapter: kept on the device, and the pill says so
+        phone_ctx.set_offline(True)
+        phone.wait_for_selector(f'{status}[data-state="offline"]')
+        assert phone.text_content(status).strip() == "Saved locally"
+        phone.click(tick)
+        assert is_ticked(phone)
+        assert phone.get_attribute(status, "data-state") == "offline"
+
+        # A little later the laptop, online, ticks and unticks the same chapter, so its last action is "not read"
+        laptop.wait_for_timeout(50)
+        laptop.click(tick)
+        synced(laptop)
+        laptop.click(tick)
+        assert laptop.get_attribute(status, "data-state") == "syncing"
+        assert laptop.text_content(status).strip() == "Syncing..."
+        synced(laptop)
+        assert not is_ticked(laptop)
+
+        # The phone comes back with its older change: it is discarded and the phone shows the laptop's state
+        phone_ctx.set_offline(False)
+        phone.wait_for_function("!Object.values(JSON.parse(localStorage.getItem('studynest-v2')).syl).some((p) => p.dirty)", timeout=30_000)
+        synced(phone)
+        assert not is_ticked(phone)
+
+        # And it stays that way after both reload, even though the phone also uploaded its whole planner
+        for pg in (phone, laptop):
+            pg.reload(wait_until="networkidle")
+            pg.wait_for_selector(".chapter")
+            synced(pg)
+            assert not is_ticked(pg)
+        browser.close()
+    assert errors == []

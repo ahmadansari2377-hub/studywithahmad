@@ -79,12 +79,13 @@ function save() {
     state.share = shareSummary(); // what the parent link and the reminders read
   } catch (e) {}
   saveLocal();
+  edits++;
   if (token) { markDirty(true); scheduleSync(); } else maybeNudge();
 }
 
 // ---------- Cloud database (needs the Study with Ahmad server: `uv run website`) ----------
 const CLOUD = location.protocol.startsWith("http");
-let token = null, username = null, pulling = false, syncTimer;
+let token = null, username = null, pulling = false, syncTimer, edits = 0;
 try { token = localStorage.getItem("studynest-token"); username = localStorage.getItem("studynest-user"); } catch (e) {}
 if (!CLOUD) token = null;
 
@@ -102,7 +103,28 @@ async function api(path, opts = {}) {
   }
   return body;
 }
+// The SyncStatus pill in the header. Everything that changes the sync state goes through setSync(), and
+// setSync("saving") is how to switch on the spinner by hand around any request. Offline wins over the rest:
+// "Saved locally" also covers a server that can't be reached, because that is exactly where the changes are then.
+const SYNC_VIEWS = {
+  offline: LANG === "ur" ? "اس ڈیوائس پر محفوظ" : "Saved locally",
+  syncing: LANG === "ur" ? "سنک ہو رہا ہے..." : "Syncing...",
+  synced: LANG === "ur" ? "تبدیلیاں محفوظ" : "Changes saved",
+};
+let syncStatus = "idle";
+function showSyncStatus() {
+  const box = $("#syncStatus");
+  box.hidden = !token || DEMO; // signed out, nothing is syncing, so "Changes saved" would be untrue
+  const view = !navigator.onLine || syncStatus === "error" ? "offline" : syncStatus === "saving" ? "syncing" : "synced";
+  box.dataset.state = view;
+  $("#syncStatusText").textContent = SYNC_VIEWS[view];
+}
+addEventListener("online", showSyncStatus);
+addEventListener("offline", showSyncStatus);
+
 function setSync(status, msg) {
+  syncStatus = status;
+  showSyncStatus();
   const dot = $("#syncDot");
   dot.className = "sync-dot " + (token ? status : "");
   $("#accountText").textContent = username || "Sign in";
@@ -116,24 +138,93 @@ function scheduleSync() {
   syncTimer = setTimeout(pushState, 900);
 }
 async function pushState() {
-  try { await api("/api/state", { method: "PUT", body: JSON.stringify({ data: state }) }); markDirty(false); setSync("ok"); }
-  catch (e) { setSync("error"); syncTimer = setTimeout(pushState, 15000); }
+  const seen = edits;
+  try {
+    const stale = await sendChapters();
+    if (stale) afterMerge();
+    await api("/api/state", { method: "PUT", body: JSON.stringify({ data: state }) });
+    if (seen === edits) { markDirty(false); setSync("ok"); } // an edit made during the upload still needs its own upload
+  } catch (e) { setSync("error"); syncTimer = setTimeout(pushState, 15000); }
+}
+
+// ---------- Chapter sync (Last-Write-Wins, the rules are in server.py at /api/sync) ----------
+// Chapter ticks don't rely on the whole-planner upload above: each one goes to /api/sync with the time it was made.
+// pr.t = when it was last changed, pr.dirty = the server hasn't got this change yet (survives a reload, it's in localStorage).
+function setChapter(key, pr) {
+  // Normally just the time now. The +1 ms is for a device whose clock runs slow: the student changed what they could
+  // see, so this change must count as later than it, or the server would throw away what they just did.
+  pr.t = new Date(Math.max(Date.now(), pr.t ? Date.parse(pr.t) + 1 : 0)).toISOString();
+  pr.dirty = true;
+  state.syl[key] = pr;
+}
+const chapterChange = (id, pr) => ({
+  chapter_id: id, is_completed: !!pr.r, is_revised: !!pr.v, updated_at: pr.t,
+  read_on: pr.rAt ? String(pr.rAt).slice(0, 10) : null, revised_on: pr.vAt ? String(pr.vAt).slice(0, 10) : null, revisions: Number(pr.n) || 0,
+});
+const chapterEntry = (c) => ({ r: c.is_completed, v: c.is_revised, rAt: c.read_on, vAt: c.revised_on, n: c.revisions, t: c.updated_at });
+let myId = null; // the id in the /api/sync address; asked once per session so it can't outlive a change of account
+async function syncPath() {
+  if (!myId) myId = (await api("/api/me")).id;
+  return `/api/sync/${myId}`;
+}
+// Sends the queue. Returns how many changes the server discarded for being older than what it has.
+async function sendChapters() {
+  const queue = Object.entries(state.syl).filter(([, pr]) => pr && pr.dirty);
+  if (!queue.length) return 0;
+  const path = await syncPath();
+  let stale = 0;
+  for (let i = 0; i < queue.length; i += 200) { // the server takes up to 500; smaller is kinder to a slow connection
+    const batch = queue.slice(i, i + 200), sentAt = Object.fromEntries(batch.map(([id, pr]) => [id, pr.t]));
+    const { results } = await api(path, { method: "POST", body: JSON.stringify({ changes: batch.map(([id, pr]) => chapterChange(id, pr)) }) });
+    results.forEach((c) => {
+      if (!c.applied) stale++;
+      // Not if the student changed it again while this was on its way: that newer change is still queued
+      if (state.syl[c.chapter_id]?.t === sentAt[c.chapter_id]) state.syl[c.chapter_id] = chapterEntry(c);
+    });
+  }
+  saveLocal();
+  return stale;
+}
+// Takes what other devices did. Returns how many chapters changed here.
+function mergeChapters(rows) {
+  let changed = 0;
+  rows.forEach((c) => {
+    const mine = state.syl[c.chapter_id];
+    if (mine?.dirty) return; // queued here, so the server decides when it arrives
+    if (!mine?.t || Date.parse(c.updated_at) > Date.parse(mine.t)) { state.syl[c.chapter_id] = chapterEntry(c); changed++; }
+  });
+  return changed;
+}
+function afterMerge() {
+  try { state.share = shareSummary(); } catch (e) {}
+  saveLocal();
+  if (!pulling) renderAll(true); // while signing in or loading, the caller draws the page when it's done
+}
+// Back from offline (or "Sync now"): send this device's queue, take what the others did, then upload the planner.
+async function catchUp() {
+  clearTimeout(syncTimer);
+  setSync("saving");
+  try {
+    const stale = await sendChapters();
+    const newer = mergeChapters((await api(await syncPath())).chapters);
+    if (stale || newer) afterMerge();
+    if (newer || isDirty()) await pushState(); else setSync("ok");
+  } catch (e) { setSync("error"); syncTimer = setTimeout(catchUp, 15000); }
 }
 // Cloud copy wins if it exists; otherwise this device's planner is uploaded.
 async function pullState() {
-  if (isDirty()) { await pushState(); return true; } // offline edits on this device are newer
+  if (isDirty()) { await catchUp(); return true; } // offline edits on this device still have to go up first
   const res = await api("/api/state");
-  if (res.data) { state = { ...defaults(), ...res.data }; saveLocal(); }
+  if (res.data) { state = { ...defaults(), ...res.data }; saveLocal(); setSync("ok"); }
   else await pushState();
-  setSync("ok");
   return !!res.data;
 }
 function rememberLogin(t, u) {
-  token = t; username = u;
+  token = t; username = u; myId = null;
   try { localStorage.setItem("studynest-token", t); localStorage.setItem("studynest-user", u); } catch (e) {}
 }
 function forgetLogin() {
-  token = null; username = null;
+  token = null; username = null; myId = null;
   try { localStorage.removeItem("studynest-token"); localStorage.removeItem("studynest-user"); } catch (e) {}
   setSync("idle");
 }
@@ -361,7 +452,7 @@ function openAuth() {
   $("#authCodeBox").hidden = true;
   $("#authSigned").hidden = !signed;
   $("#authOffline").hidden = CLOUD;
-  if (signed) { $("#authName").textContent = username; setSync($("#syncDot").classList.contains("error") ? "error" : "ok"); loadAccount(); }
+  if (signed) { $("#authName").textContent = username; setSync(syncStatus); loadAccount(); }
   $("#authError").textContent = "";
   auth.classList.add("open");
   auth.setAttribute("aria-hidden", "false");
@@ -532,7 +623,7 @@ $("#passForm").addEventListener("submit", async (e) => {
     toast("Password changed. Other devices have been signed out");
   } catch (err) { $("#passError").textContent = err.message; }
 });
-$("#syncNow").onclick = async () => { clearTimeout(syncTimer); setSync("saving"); await pushState(); toast("Synced with the cloud"); };
+$("#syncNow").onclick = async () => { await catchUp(); toast(syncStatus === "ok" ? "Synced with the cloud" : "Couldn't reach the server. Your changes are safe on this device"); };
 $("#signOut").onclick = async () => {
   try { await api("/api/logout", { method: "POST" }); } catch (e) {}
   forgetLogin();
@@ -722,7 +813,7 @@ document.addEventListener("click", (e) => {
   const [s, n] = b.dataset.rev.split("|"), k = sylKey(s, +n);
   const pr = state.syl[k] || {};
   markRevised(pr);
-  state.syl[k] = pr;
+  setChapter(k, pr);
   save();
   confetti(...centerOf(b), 30);
   toast(`Revised! Next reminder in ${REVIEW_GAPS[Math.min(pr.n, REVIEW_GAPS.length - 1)]} days`);
@@ -841,7 +932,7 @@ $("#chapters").addEventListener("click", (e) => {
   pr[btn.dataset.act] = !pr[btn.dataset.act];
   if (btn.dataset.act === "r" && pr.r && !pr.rAt) pr.rAt = dayKey();
   if (btn.dataset.act === "v" && pr.v) { markRevised(pr); if (!pr.rAt) pr.rAt = dayKey(); } // revised implies read
-  state.syl[k] = pr;
+  setChapter(k, pr);
   save();
   $(".toggle.read", li).classList.toggle("on", !!pr.r);
   $(".toggle.rev", li).classList.toggle("on", !!pr.v);
@@ -1435,7 +1526,7 @@ function addSample() {
       const pr = state.syl[k] || {};
       if (!pr.r) Object.assign(pr, { r: true, rAt: when });
       if (i < read / 2 && !pr.v) Object.assign(pr, { v: true, vAt: dayKey(addDays(new Date(), -(1 + i * 2))), n: 2 });
-      state.syl[k] = pr;
+      setChapter(k, pr);
     }
   });
   state.exams.forEach((x) => (x.title = x.title.replace(" (update date)", "")));
@@ -1456,6 +1547,7 @@ $("#importFile").addEventListener("change", async (e) => {
     if (typeof data !== "object" || !("tasks" in data || "syl" in data || "profile" in data)) throw new Error();
     if (!confirm("Replace your current planner with this backup?")) return;
     state = { ...defaults(), ...data };
+    Object.entries(state.syl).forEach(([k, pr]) => setChapter(k, pr)); // restoring is a change made now, so it beats what's in the cloud
     save(); renderAll(true);
     toast("Backup restored ✓");
   } catch (err) { toast("That file isn't a Study with Ahmad backup"); }
@@ -1464,7 +1556,13 @@ $("#clearBtn").onclick = async () => {
   if (!confirm(token ? "Delete all your Study with Ahmad data, in this browser AND in your cloud account? This can't be undone." : "Delete all your Study with Ahmad data in this browser? This can't be undone.")) return;
   state = defaults();
   saveLocal();
-  if (token) { clearTimeout(syncTimer); try { await api("/api/state", { method: "PUT", body: JSON.stringify({ data: state }) }); } catch (e) {} }
+  if (token) {
+    clearTimeout(syncTimer);
+    try {
+      await api(await syncPath(), { method: "DELETE" });
+      await api("/api/state", { method: "PUT", body: JSON.stringify({ data: state }) });
+    } catch (e) {}
+  }
   location.reload();
 };
 
@@ -2096,7 +2194,7 @@ $("#etGrid").addEventListener("click", (e) => {
     const li = tog.closest("li"), pr = state.syl[li.dataset.key] || {};
     pr.r = !pr.r;
     if (pr.r && !pr.rAt) pr.rAt = dayKey();
-    state.syl[li.dataset.key] = pr;
+    setChapter(li.dataset.key, pr);
     save();
     li.classList.toggle("on", pr.r); tog.classList.toggle("on", pr.r);
     const chs = etChapters(p.subject), read = chs.filter((c) => state.syl[c.key]?.r).length;
@@ -2195,8 +2293,8 @@ $("#solverOut").addEventListener("click", (e) => {
 });
 if (SOLVER_OK) renderSolver(); else $("#solver").hidden = true;
 
-// Back online: send anything saved while offline
-addEventListener("online", () => { if (token && isDirty()) { setSync("saving"); pushState(); } });
+// Back online: send anything saved while offline and pick up what other devices did meanwhile
+addEventListener("online", () => { if (token && !DEMO) catchUp(); });
 
 // ---------- Offline banner (load shedding / no internet) ----------
 function showNet() { $("#netBanner").hidden = navigator.onLine; }

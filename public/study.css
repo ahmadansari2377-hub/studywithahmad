@@ -394,6 +394,18 @@ textarea.input { height: auto; padding: 12px 14px; resize: vertical; }
 .sync-dot.ok { background: var(--mint); }
 .sync-dot.saving { background: var(--sun); animation: blink 0.8s infinite; }
 .sync-dot.error { background: var(--coral); }
+/* SyncStatus: one icon per state and no shadows or blur, so it stays cheap on low-end phones.
+   Fixed under the header because the header row has no spare width; clicks pass through to the page. */
+.sync-status { position: fixed; top: 74px; right: 12px; z-index: 40; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 50px; border: 1px solid var(--line); background: var(--surface); font-size: 12px; font-weight: 600; white-space: nowrap; color: var(--muted); pointer-events: none; }
+.sync-status[hidden] { display: none; }
+.sync-status svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.sync-status .ss-cloud, .sync-status .ss-spinner, .sync-status .ss-check { display: none; }
+.sync-status[data-state="offline"] .ss-cloud, .sync-status[data-state="synced"] .ss-check { display: block; }
+.sync-status[data-state="syncing"] { color: var(--primary); }
+.sync-status[data-state="syncing"] .ss-spinner { display: block; width: 14px; height: 14px; flex: none; border-radius: 50%; border: 2px solid var(--line); border-top-color: currentColor; animation: ss-spin 0.8s linear infinite; }
+.sync-status[data-state="synced"] { color: var(--ink); }
+.sync-status .ss-check { color: var(--mint); }
+@keyframes ss-spin { to { transform: rotate(360deg); } }
 .auth-card { max-width: 480px; }
 .auth-close { position: absolute; top: 14px; right: 14px; transform: rotate(45deg); }
 .auth-close:hover { transform: rotate(135deg); }
