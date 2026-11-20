@@ -1044,6 +1044,7 @@ h2 em .wi, .hero h1 em .wi {
   color: var(--ink); transition: border-color 0.3s, transform 0.3s var(--ease-out, ease);
 }
 .app-flag:hover { border-color: var(--primary); transform: translateY(-2px); }
+.hero-text > .app-flag, .hero-text > .chip { vertical-align: top; } /* side by side, the two pills line up at the top */
 .app-flag b { padding: 3px 10px; border-radius: 50px; background: var(--brand, var(--primary)); color: #fff; font-size: 12px; font-weight: 700; }
 .app-flag svg { width: 15px; height: 15px; color: var(--primary); }
 .app-lead { max-width: 440px; }

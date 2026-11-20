@@ -62,6 +62,7 @@ PUBLIC_FILES = {
     "parent.html": ("parent.html", "text/html"),
     "sw.js": ("sw.js", "text/javascript"),
     "manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
+    "ahmad.jpg": ("ahmad.jpg", "image/jpeg"),
     "icons/icon-192.png": ("icons/icon-192.png", "image/png"),
     "icons/icon-512.png": ("icons/icon-512.png", "image/png"),
     "icons/icon-maskable-512.png": ("icons/icon-maskable-512.png", "image/png"),

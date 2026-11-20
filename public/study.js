@@ -237,6 +237,7 @@ setTimeout(() => { $("#loader").style.display = "none"; if (lenis) lenis.start()
 let lenis = null;
 if (A) {
   gsap.registerPlugin(ScrollTrigger);
+  gsap.config({ nullTargetWarn: false }); // empty lists (no tasks yet…) are normal, not worth a console warning
   if (window.Lenis) {
     lenis = new Lenis({ lerp: 0.1 });
     lenis.on("scroll", ScrollTrigger.update);
@@ -1780,7 +1781,8 @@ if (!A) {
     .set("#loader", { display: "none" })
     .from(".header-inner > *, .nav a", { y: -30, opacity: 0, stagger: 0.04, duration: 0.9 }, "-=0.6")
     .from(".blob", { scale: 0, duration: 2.2, stagger: 0.15 }, "<")
-    .from("#appFlag, #todayChip", { y: 20, opacity: 0, stagger: 0.08, duration: 0.8 }, "<0.1")
+    // fromTo + clearProps: the app flag's CSS transform transition otherwise left it stuck 20px low
+    .fromTo("#appFlag, #todayChip", { y: 20, opacity: 0 }, { y: 0, opacity: 1, stagger: 0.08, duration: 0.8, clearProps: "transform" }, "<0.1")
     .from(heroWords, { yPercent: 120, rotate: 5, stagger: 0.06, duration: 1.2 }, "<0.1")
     .from("#flipWord", { yPercent: 120, duration: 1.2 }, "<0.25")
     .from(".dot-grid, .spotlight", { opacity: 0, duration: 1.5 }, "<")
