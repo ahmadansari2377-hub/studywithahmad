@@ -71,7 +71,7 @@ function saveLocal() { try { localStorage.setItem(KEY, JSON.stringify(state)); }
 const markDirty = (on) => { try { on ? localStorage.setItem("swa-dirty", "1") : localStorage.removeItem("swa-dirty"); } catch (e) {} };
 const isDirty = () => { try { return !!localStorage.getItem("swa-dirty"); } catch (e) { return false; } };
 // Demo mode (a link with ?demo, or "Try a demo"): a ready-made student for judges and visitors, never saved anywhere
-let DEMO = (() => { try { if (/[?&]demo\b/.test(location.search)) sessionStorage.setItem("swa-demo", "1"); return sessionStorage.getItem("swa-demo") === "1"; } catch (e) { return false; } })();
+let DEMO = (() => { try { if (/[?&](demo|present)\b/.test(location.search)) sessionStorage.setItem("swa-demo", "1"); return sessionStorage.getItem("swa-demo") === "1"; } catch (e) { return false; } })();
 function save() {
   if (DEMO) return;
   try {
@@ -968,6 +968,7 @@ function drawTimer() {
   document.title = running ? `${fmt(remaining)} · ${mode === "focus" ? "Focus" : "Break"} — Study with Ahmad` : "Study with Ahmad — Study Planner";
   const done = todaysSessions().length;
   $("#sessionDots").innerHTML = Array.from({ length: 4 }, (_, i) => `<i class="${i < done % 4 || (done && done % 4 === 0) ? "on" : ""}"></i>`).join("");
+  if (window.zenDraw) zenDraw(); // full-screen focus (extras.js)
 }
 function movePill(container, pillEl, active) {
   pillEl.style.width = active.offsetWidth + "px";
@@ -1989,6 +1990,7 @@ async function askBuddy(question, image = "") {
     answerOf.set(typing, { question: question || "Photo question", answer: res.answer, subject: s });
     typing.querySelector(".msg-body").insertAdjacentHTML("beforeend", '<button class="msg-save" data-save type="button">📒 Save to mistake notebook</button>');
     $("#buddyLeft").textContent = `${res.left} question${res.left === 1 ? "" : "s"} left today`;
+    if (window.onBuddyAnswer) onBuddyAnswer(typing, res.answer); // read it aloud (extras.js)
   } catch (err) {
     typing.classList.remove("typing");
     typing.classList.add("error");
@@ -2314,9 +2316,12 @@ $("#buddyMic").onclick = () => {
   recog = new SpeechRec();
   recog.lang = buddyLang === "en" ? "en-PK" : "ur-PK";
   recog.interimResults = true;
-  recog.onresult = (e) => { $("#buddyInput").value = [...e.results].map((r) => r[0].transcript).join(""); };
+  recog.onresult = (e) => { $("#buddyInput").value = [...e.results].map((r) => r[0].transcript).join(""); window.voiceAsked = true; };
   recog.onerror = (e) => toast(e.error === "not-allowed" ? "Allow the microphone to speak your question" : "Couldn't hear that, please try again");
-  recog.onend = () => { recog = null; $("#buddyMic").classList.remove("on"); if ($("#buddyInput").value.trim()) { $("#buddyInput").focus(); toast("Check the words, then press Ask"); } };
+  recog.onend = () => {
+    recog = null; $("#buddyMic").classList.remove("on");
+    if (window.voiceChat && $("#buddyInput").value.trim()) { $("#buddyForm").requestSubmit(); return; } // hands-free voice chat (extras.js)
+    if ($("#buddyInput").value.trim()) { $("#buddyInput").focus(); toast("Check the words, then press Ask"); } };
   recog.start();
   $("#buddyMic").classList.add("on");
   toast(buddyLang === "en" ? "Listening… speak your question" : "Sun raha hoon… apna sawal bolein");

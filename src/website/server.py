@@ -56,6 +56,7 @@ PUBLIC_FILES = {
     "syllabus.js": ("syllabus.js", "text/javascript"),
     "entrytests.js": ("entrytests.js", "text/javascript"),
     "solver.js": ("solver.js", "text/javascript"),
+    "extras.js": ("extras.js", "text/javascript"),
     "privacy": ("privacy.html", "text/html"),
     "privacy.html": ("privacy.html", "text/html"),
     "parent": ("parent.html", "text/html"),
@@ -1124,6 +1125,29 @@ def city_board():
             (monday,),
         ).fetchall()
     return {"week_of": monday, "cities": [{"city": r[0][:30], "students": r[1], "minutes": r[2]} for r in rows]}
+
+
+_stats_cache: dict = {"at": 0.0, "data": None}
+
+
+@app.get("/api/stats")
+def live_stats():
+    """Public totals for the homepage: students, hours focused, chapters read, studying right now. Cached for a minute."""
+    if _stats_cache["data"] and time.time() - _stats_cache["at"] < 60:
+        return _stats_cache["data"]
+    with db() as conn:
+        students = conn.execute("SELECT count(*) FROM users").fetchone()[0]
+        mins = conn.execute(
+            """SELECT COALESCE(SUM((s->>'min')::int), 0)
+               FROM planner_data p, jsonb_array_elements(
+                   CASE WHEN jsonb_typeof(p.data->'sessions') = 'array' THEN p.data->'sessions' ELSE '[]'::jsonb END) s
+               WHERE COALESCE(s->>'sample', 'false') <> 'true' AND (s->>'min') ~ '^[0-9]{1,3}$'"""
+        ).fetchone()[0]
+        chapters = conn.execute("SELECT count(*) FROM chapter_progress WHERE is_completed").fetchone()[0]
+        now = conn.execute("SELECT count(*) FROM study_rooms WHERE ends_at > now()").fetchone()[0]
+    data = {"students": students, "hours": round(mins / 60), "chapters": chapters, "studying_now": now}
+    _stats_cache.update(at=time.time(), data=data)
+    return data
 
 
 # ---------- AI tools that answer in JSON: paper checker, book page -> cards, practice paper ----------

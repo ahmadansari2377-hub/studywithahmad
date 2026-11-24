@@ -1,0 +1,453 @@
+// Study with Ahmad — extras: board exam countdown, live numbers, full-screen focus, voice answers,
+// guided tour and presentation mode. Loaded after study.js and uses its globals ($, state, toast, showTab…).
+// Everything sits inside this function so no name here can clash with one in study.js.
+(() => {
+  const PRESENT = /[?&]present\b/.test(location.search);
+  const isTabbed = () => root.classList.contains("tabbed");
+  const two = (n) => String(n).padStart(2, "0");
+
+  // =====================================================================
+  //  Board exam countdown (hero)
+  // =====================================================================
+  // Board dates move a little every year, so these are only starting guesses; the student sets the real one.
+  function estimatedBoardDate() {
+    const p = state.profile, fb = p.board === "fbise", matric = p.cls <= 10;
+    const [m, d] = matric ? (fb ? [3, 15] : [2, 1]) : fb ? [3, 25] : [3, 20]; // month is 0-based
+    const now = new Date();
+    let x = new Date(now.getFullYear(), m, d, 8, 30);
+    if (x < now) x = new Date(now.getFullYear() + 1, m, d, 8, 30);
+    return x;
+  }
+  function boardDate() {
+    const set = state.settings.boardDate;
+    return set ? new Date(set + "T08:30") : estimatedBoardDate();
+  }
+  const dateKey = (d) => `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}`;
+  function syllabusLeft() {
+    let read = 0, total = 0;
+    bookSubjects().forEach((s) => { const p = bookProgress(s); read += p.read; total += p.total; });
+    return { read, total, left: total - read };
+  }
+  let lastBc = "";
+  function tickBoard() {
+    const box = $("#boardCount");
+    if (!state.profile) { box.hidden = true; return; }
+    box.hidden = false;
+    const when = boardDate(), diff = Math.max(0, when - Date.now());
+    const v = { d: Math.floor(diff / 864e5), h: two(Math.floor(diff / 36e5) % 24), m: two(Math.floor(diff / 6e4) % 60), s: two(Math.floor(diff / 1e3) % 60) };
+    Object.entries(v).forEach(([u, val]) => {
+      const b = $(`#bcClock b[data-u="${u}"]`);
+      if (b.textContent !== String(val)) {
+        b.textContent = val;
+        if (A && u !== "d") gsap.fromTo(b, { yPercent: -40, opacity: 0.3 }, { yPercent: 0, opacity: 1, duration: 0.4, ease: "expo.out" });
+      }
+    });
+    const { read, total, left } = syllabusLeft();
+    const key = `${read}/${total}/${v.d}/${state.settings.boardDate || ""}/${state.profile.cls}/${state.profile.board}`;
+    if (key === lastBc) return; // the slow-changing parts only need redrawing when something changed
+    lastBc = key;
+    const lvl = state.profile.cls <= 10 ? "Matric" : "Inter";
+    $("#bcTitle").textContent = `Class ${state.profile.cls} ${state.profile.board === "fbise" ? "FBISE" : "Punjab Board"} annual exam · ${when.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}`;
+    $("#bcEst").textContent = state.settings.boardDate ? "Your date (tap to change)" : `Estimated ${lvl} date — set yours from the date sheet`;
+    $("#bcDate").value = dateKey(when);
+    const studyDays = Math.max(1, v.d - 30); // keep the last month free for revision
+    const pace = left ? Math.ceil((left / studyDays) * 10) / 10 : 0;
+    $("#bcLeft").textContent = left;
+    $("#bcPace").textContent = pace;
+    const pct = total ? Math.round((read / total) * 100) : 0;
+    $("#bcPct").textContent = pct + "%";
+    $("#bcBar").style.transform = `scaleX(${total ? read / total : 0})`;
+    $("#bcTip").textContent = diff === 0 ? "Exam day has passed. Set the date of your next board exam above."
+      : !left ? "Every chapter is read. Now it's all revision and past papers. 💪"
+      : v.d <= 30 ? `Final month: revise ${Math.ceil(left / Math.max(1, v.d))} chapters a day and do one past paper daily.`
+      : pace <= 1 ? `Easy pace: about one chapter every ${Math.max(1, Math.round(1 / pace))} day${Math.round(1 / pace) > 1 ? "s" : ""} keeps you a month ahead.`
+      : `Read ${pace} chapters a day and you'll finish by ${addDays(new Date(), studyDays).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}, a month before the exam.`;
+  }
+  $("#bcDate").addEventListener("change", (e) => {
+    if (!e.target.value) { delete state.settings.boardDate; }
+    else if (new Date(e.target.value + "T08:30") < Date.now()) { toast("Pick a date in the future"); lastBc = ""; tickBoard(); return; }
+    else state.settings.boardDate = e.target.value;
+    save();
+    lastBc = "";
+    tickBoard();
+    toast("Board exam date saved");
+  });
+  tickBoard();
+  setInterval(tickBoard, 1000);
+
+  // =====================================================================
+  //  Live numbers from every student (hero)
+  // =====================================================================
+  async function loadStats() {
+    if (!CLOUD || !navigator.onLine) return;
+    try {
+      const r = await fetch("/api/stats");
+      if (!r.ok) return;
+      const d = await r.json();
+      const box = $("#liveStats");
+      if (!d.students) return;
+      const first = box.hidden;
+      box.hidden = false;
+      $$("#liveStats b[data-k]").forEach((b) => {
+        const to = Number(d[b.dataset.k]) || 0, from = Number(b.dataset.v || 0);
+        b.dataset.v = to;
+        if (A && from !== to) {
+          const o = { n: from };
+          gsap.to(o, { n: to, duration: first ? 2 : 1, ease: "power2.out", onUpdate: () => (b.textContent = Math.round(o.n).toLocaleString("en-US")) });
+        } else b.textContent = to.toLocaleString("en-US");
+      });
+      if (first && A) gsap.from("#liveStats", { y: 20, opacity: 0, duration: 0.8, ease: "expo.out" });
+    } catch (e) { /* offline or server asleep: the strip simply stays hidden */ }
+  }
+  loadStats();
+  setInterval(loadStats, 60000);
+
+  // =====================================================================
+  //  Full-screen focus mode
+  // =====================================================================
+  const zen = $("#zen");
+  const ZEN_QUOTES = [
+    "Phone face down. Just this one page.",
+    "Thori si mehnat roz, bara result saal ke end par.",
+    "You don't need to feel like it. Just start.",
+    "Every minute here is a mark in the board exam.",
+    "Concentrate. The book won't read itself.",
+    "Small steps every day beat cramming the night before.",
+  ];
+  let distractions = 0, awayAt = 0;
+  function zenDraw() {
+    if (!running && remaining === total()) distractions = 0; // a fresh session starts with a clean count
+    if (zen.hidden) return;
+    $("#zenTime").textContent = $("#timeText").textContent;
+    $("#zenLabel").textContent = $("#timeLabel").textContent;
+    $("#zenSubj").textContent = mode === "focus" || mode === "exam" ? subj($("#focusSubject").value).name : "Break time";
+    $("#zenBar").style.transform = `scaleX(${1 - remaining / total()})`;
+    $("#zenDistract").textContent = distractions ? `👀 Left the timer ${distractions} time${distractions > 1 ? "s" : ""} this session` : running && mode === "focus" ? "No distractions so far. Keep it up!" : "";
+    zen.classList.toggle("running", running);
+    zen.dataset.mode = mode;
+  }
+  window.zenDraw = zenDraw;
+  function zenOpen() {
+    zen.hidden = false;
+    $("#zenQuote").textContent = ZEN_QUOTES[Math.floor(Math.random() * ZEN_QUOTES.length)];
+    if (lenis) lenis.stop();
+    document.body.style.overflow = "hidden";
+    if (zen.requestFullscreen) zen.requestFullscreen().catch(() => {});
+    zenDraw();
+    if (A) gsap.fromTo(zen.children, { y: 30, opacity: 0 }, { y: 0, opacity: 1, stagger: 0.06, duration: 0.9, ease: "expo.out" });
+    if (!running && mode === "focus") toast("Press play when you're ready. Leaving the screen gets counted!");
+  }
+  function zenClose() {
+    if (zen.hidden) return;
+    zen.hidden = true;
+    document.body.style.overflow = "";
+    if (lenis) lenis.start();
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  }
+  $("#zenOpen").onclick = zenOpen;
+  $("#zenClose").onclick = zenClose;
+  $("#zenPlay").onclick = () => $("#playBtn").click();
+  document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement) zenClose(); });
+  document.addEventListener("keydown", (e) => {
+    if (zen.hidden) return;
+    if (e.key === "Escape") zenClose();
+    if (e.key === " " && e.target === document.body) { e.preventDefault(); $("#playBtn").click(); }
+  });
+  // Switching tabs or apps during a focus session is counted, and you get a nudge when you come back
+  document.addEventListener("visibilitychange", () => {
+    if (!running || mode !== "focus") return;
+    if (document.hidden) { distractions++; awayAt = Date.now(); return; }
+    const secs = Math.round((Date.now() - awayAt) / 1000);
+    if (secs >= 3) toast(`👀 Welcome back! You were away ${secs < 60 ? secs + " s" : Math.round(secs / 60) + " min"}. Phone door rakhein, focus karein.`);
+    zenDraw();
+  });
+
+  // =====================================================================
+  //  Voice: hear the AI tutor's answers, hands-free voice chat
+  // =====================================================================
+  const TTS = "speechSynthesis" in window;
+  let voices = [];
+  const loadVoices = () => { voices = TTS ? speechSynthesis.getVoices() : []; };
+  if (TTS) { loadVoices(); speechSynthesis.addEventListener?.("voiceschanged", loadVoices); }
+  function pickVoice(lang) {
+    const want = lang === "ur" ? ["ur"] : lang === "roman" ? ["hi-in", "en-in", "en"] : ["en-gb", "en-us", "en"];
+    for (const w of want) {
+      const v = voices.find((x) => x.lang.replace("_", "-").toLowerCase().startsWith(w));
+      if (v) return v;
+    }
+    return null;
+  }
+  // Markdown and symbols sound silly read aloud; long answers go in sentence-sized pieces (Chrome stops after ~15 s otherwise)
+  function speechChunks(text) {
+    const clean = text.replace(/```[\s\S]*?```/g, " ").replace(/[*_`#>|]/g, " ").replace(/^\s*[-•]\s+/gm, "").replace(/\s*\n+\s*/g, ". ").replace(/\.\s*\./g, ".").replace(/\s{2,}/g, " ").trim();
+    const parts = clean.match(/[^.!?۔؟]+[.!?۔؟]*/g) || [clean];
+    const out = [];
+    parts.forEach((p) => {
+      p = p.trim();
+      if (!p) return;
+      if (out.length && (out[out.length - 1] + " " + p).length < 180) out[out.length - 1] += " " + p;
+      else out.push(p);
+    });
+    return out;
+  }
+  let speakingBtn = null;
+  function stopSpeaking() {
+    if (TTS) speechSynthesis.cancel();
+    if (speakingBtn) { speakingBtn.textContent = "🔊 Listen"; speakingBtn.classList.remove("on"); speakingBtn = null; }
+  }
+  function speakText(text, lang, btn) {
+    if (!TTS) return toast("This browser can't read text aloud");
+    if (speakingBtn === btn) return stopSpeaking();
+    stopSpeaking();
+    if (!voices.length) loadVoices();
+    const voice = pickVoice(lang);
+    if (lang === "ur" && !voice) return toast("No Urdu voice on this device. Pick Roman Urdu to hear answers, or add Urdu in text-to-speech settings");
+    const chunks = speechChunks(text);
+    speakingBtn = btn;
+    btn.textContent = "⏹ Stop";
+    btn.classList.add("on");
+    chunks.forEach((c, i) => {
+      const u = new SpeechSynthesisUtterance(c);
+      if (voice) { u.voice = voice; u.lang = voice.lang; } else u.lang = lang === "ur" ? "ur-PK" : "en-US";
+      u.rate = lang === "en" ? 1 : 0.95;
+      if (i === chunks.length - 1) u.onend = () => { if (speakingBtn === btn) stopSpeaking(); };
+      speechSynthesis.speak(u);
+    });
+  }
+  window.onBuddyAnswer = (el, text) => {
+    const lang = buddyLang;
+    if (TTS) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "msg-save msg-listen";
+      b.textContent = "🔊 Listen";
+      b.onclick = () => speakText(text, lang, b);
+      $(".msg-body", el).append(b);
+      if (window.voiceAsked || window.voiceChat) speakText(text, lang, b);
+    }
+    window.voiceAsked = false;
+  };
+  window.voiceChat = false;
+  $("#voiceChat").onclick = () => {
+    window.voiceChat = !window.voiceChat;
+    const on = window.voiceChat, btn = $("#voiceChat");
+    btn.classList.toggle("on", on);
+    btn.setAttribute("aria-pressed", on);
+    if (!on) { stopSpeaking(); toast("Voice chat off"); return; }
+    if (!(window.SpeechRecognition || window.webkitSpeechRecognition)) toast("This browser can't hear speech (try Chrome). Answers will still be read aloud");
+    else { toast(buddyLang === "en" ? "Voice chat on: ask your question out loud" : "Voice chat on: apna sawal bolein"); $("#buddyMic").click(); }
+  };
+
+  // =====================================================================
+  //  Guided tour + presentation mode
+  // =====================================================================
+  const STEPS = [
+    { sec: "hero", sel: "#statGrid", t: "Your day at a glance", d: "Minutes focused, tasks done, your study streak and the next exam. It all updates live as you study." },
+    { sec: "hero", sel: "#boardCount", t: "Board exam countdown", d: "Counts down to the annual board exam and works out how many chapters a day you need to finish a month early, so the last month is pure revision." },
+    { sec: "syllabus", sel: "#sylSubjects", t: "Every chapter of your books", d: "Official 2026–27 PTB and FBISE chapter lists for every subject. Tick Read and Revised, and spaced-repetition reminders bring old chapters back before you forget them." },
+    { sec: "focus", sel: "#timerCard", t: "Focus timer with study sounds", d: "25-minute Pomodoro sessions, rain and noise sounds, a mock-exam timer, and a full-screen focus mode that notices when you leave to check your phone." },
+    { sec: "tasks", sel: "#taskList", t: "Tasks that remember", d: "Homework and revision tasks by subject, due date and priority. Drag to reorder, tick to finish. Due ones show up on the home screen." },
+    { sec: "timetable", sel: "#blocks", t: "Weekly timetable + namaz times", d: "School, tuition and self-study blocks for every day, and one tap adds the five prayer times for your city." },
+    { sec: "exams", sel: "#planPanel", t: "AI study plan", d: "Add your date sheet and the AI makes a day-by-day plan from the chapters you haven't read yet, at the hours you can actually give." },
+    { sec: "exams", sel: "#paperPanel", t: "Practice papers in board pattern", d: "A fresh paper from your chapters with MCQs, short and long questions. MCQs are marked as you answer them." },
+    { sec: "flashcards", sel: "#flashcard", t: "Flashcards and mistake notebook", d: "Starter cards for every subject. Snap a photo of a book page and the AI turns it into cards. Every wrong answer lands in your mistake notebook." },
+    { sec: "progress-sec", sel: "#predict", t: "Progress, badges and marks predictor", d: "Charts of your week, a study heatmap, 16 badges, a city vs city challenge and a predicted board score from your test results." },
+    { sec: "buddy", sel: ".panel.buddy", t: "AI Study Buddy in Urdu & English", d: "Ask by typing, by voice or with a photo of the question. Answers come in English, Roman Urdu or Urdu, and can be read aloud." },
+    { sec: "get-app", sel: "#get-app .container", t: "An app for phones and PCs", d: "Install it on Android or Windows. It works offline during load-shedding and syncs between devices when the internet is back." },
+  ];
+  const SLIDES = {
+    title: () => `
+      <svg class="logo-svg slide-logo" viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="12" fill="url(#lgBrand)" /><path d="M20 15C16.5 12.3 12.2 11.8 8.5 13.1v15.2c3.7-1.3 8-.8 11.5 1.9z" fill="#fff" /><path d="M20 15c3.5-2.7 7.8-3.2 11.5-1.9v15.2c-3.7-1.3-8-.8-11.5 1.9z" fill="#fff" fill-opacity=".8" /><path d="M31 3.2l1.05 2.75 2.75 1.05-2.75 1.05L31 10.8l-1.05-2.75L27.2 7l2.75-1.05z" fill="#ffd166" /></svg>
+      <p class="kicker">Presenting</p>
+      <h1>Study with <em>Ahmad</em></h1>
+      <p class="slide-sub">A free study planner made for Matric and Inter students of Pakistan.</p>
+      <div class="slide-chips"><span>📚 PTB + FBISE syllabus</span><span>🤖 AI tutor in Urdu</span><span>📴 Works offline</span><span>📱 Android + Windows</span></div>
+      <button class="btn btn-primary slide-go" data-slide-next type="button"><svg><use href="#i-play"/></svg>Start the presentation</button>`,
+    problem: () => `
+      <p class="kicker">The problem</p>
+      <h2>8 books. 1 date sheet. <em>Zero plan.</em></h2>
+      <div class="slide-cols">
+        <div><b>📖</b><p>Students don't know how much syllabus is left or how much to read each day.</p></div>
+        <div><b>📱</b><p>Phones distract, and study apps aren't made for our boards or our language.</p></div>
+        <div><b>⚡</b><p>Load-shedding and slow internet break most online tools.</p></div>
+      </div>
+      <p class="slide-sub">Study with Ahmad puts the whole syllabus, a plan and a tutor in one free app.</p>`,
+    end: () => {
+      const url = location.origin + "/";
+      const live = $("#liveStats").hidden ? "" : `<p class="slide-live">${$$("#liveStats > span:not(.live-tag)").map((s) => s.textContent).join(" · ")}</p>`;
+      return `
+      <p class="kicker">Try it now</p>
+      <h2>Scan, sign up, <em>start studying.</em></h2>
+      <div class="slide-qr" id="slideQr"><span class="muted">${esc(url)}</span></div>
+      <p class="slide-url">${esc(url.replace(/^https?:\/\//, "").replace(/\/$/, ""))}</p>
+      ${live}
+      <h3 class="slide-thanks">Shukriya! 🙏</h3>
+      <button class="btn btn-soft" data-slide-exit type="button">Explore the app</button>`;
+    },
+  };
+  let T = null; // { items, i, auto, paused, left, raf, timer }
+  const STEP_MS = 8000, SLIDE_MS = 9000;
+  const tourEl = $("#tour"), hole = $("#tourHole"), tip = $("#tourTip"), slide = $("#slide");
+
+  function place() {
+    if (!T) return;
+    const it = T.items[T.i];
+    if (!it.slide) {
+      const el = $(it.sel);
+      if (el) {
+        const r = el.getBoundingClientRect(), pad = 10;
+        const clampY = (y) => Math.min(innerHeight - 6, Math.max(6, y));
+        const top = clampY(r.top - pad), bottom = clampY(r.bottom + pad);
+        const left = Math.max(6, r.left - pad), right = Math.min(innerWidth - 6, r.right + pad);
+        Object.assign(hole.style, { left: left + "px", top: top + "px", width: Math.max(0, right - left) + "px", height: Math.max(0, bottom - top) + "px" });
+        const tw = tip.offsetWidth, th = tip.offsetHeight;
+        let y = bottom + 14;
+        if (y + th > innerHeight - 10) y = top - th - 14 >= 10 ? top - th - 14 : innerHeight - th - 12;
+        const x = Math.min(innerWidth - tw - 12, Math.max(12, r.left + r.width / 2 - tw / 2));
+        tip.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+      }
+    }
+    T.raf = requestAnimationFrame(place);
+  }
+  function scrollTo(el) {
+    const y = el.getBoundingClientRect().top;
+    const offset = -(isTabbed() ? 70 : 96);
+    if (lenis) lenis.scrollTo(el, { offset, duration: 1, force: true });
+    else window.scrollTo({ top: scrollY + y + offset, behavior: "smooth" });
+  }
+  function show(i) {
+    if (!T) return;
+    if (i < 0) i = 0;
+    if (i >= T.items.length) return end(true);
+    T.i = i;
+    const it = T.items[i];
+    T.left = it.slide ? SLIDE_MS : STEP_MS;
+    if (it.slide) {
+      slide.hidden = false;
+      tourEl.hidden = true;
+      $("#slideInner").innerHTML = SLIDES[it.slide]();
+      if (it.slide === "end") drawQr();
+      if (A) gsap.fromTo("#slideInner > *", { y: 40, opacity: 0 }, { y: 0, opacity: 1, stagger: 0.08, duration: 1, ease: "expo.out" });
+      return;
+    }
+    slide.hidden = true;
+    tourEl.hidden = false;
+    if (isTabbed()) showTab(it.sec);
+    const el = $(it.sel);
+    if (!el || !el.offsetParent) { // not on this screen (e.g. no class chosen yet): skip it
+      if (i === 0) T.dir = 1;
+      return show(i + T.dir);
+    }
+    scrollTo(el);
+    // Switching phone tabs resets the scroll position a moment later; if that undid our scroll, do it again
+    setTimeout(() => {
+      if (!T || T.items[T.i] !== it) return;
+      const r = el.getBoundingClientRect();
+      if (r.top < 0 || r.top > innerHeight * 0.45) scrollTo(el);
+    }, 1200);
+    const n = T.items.filter((x) => !x.slide), k = n.indexOf(it) + 1;
+    $("#tourStep").textContent = `${k} of ${n.length}`;
+    $("#tourTitle").textContent = it.t;
+    $("#tourText").textContent = it.d;
+    $("#tourBack").disabled = i === 0 || T.items[i - 1].slide === "title";
+    $("#tourNext").textContent = i === T.items.length - 1 ? "Finish" : T.auto ? (T.paused ? "Resume" : "Next") : "Next";
+    if (!T.auto) $("#tourProg").style.transform = `scaleX(${k / n.length})`;
+    if (A) gsap.fromTo("#tourTip > *:not(.tour-prog)", { y: 12, opacity: 0 }, { y: 0, opacity: 1, stagger: 0.04, duration: 0.6, ease: "expo.out" });
+  }
+  function start(items, auto) {
+    if (T) end();
+    zenClose();
+    T = { items, i: 0, auto, paused: false, left: 0, dir: 1 };
+    tourEl.classList.toggle("auto", auto);
+    document.addEventListener("keydown", onKey);
+    T.raf = requestAnimationFrame(place);
+    if (auto) T.timer = setInterval(() => {
+      if (!T || T.paused || T.items[T.i].slide === "title" || T.items[T.i].slide === "end") return;
+      T.left -= 100;
+      const it = T.items[T.i], f = 1 - T.left / (it.slide ? SLIDE_MS : STEP_MS);
+      $("#tourProg").style.transform = `scaleX(${Math.min(1, f)})`;
+      if (T.left <= 0) next();
+    }, 100);
+    show(0);
+  }
+  function next() { if (T) { T.dir = 1; show(T.i + 1); } }
+  function back() { if (T) { T.dir = -1; show(T.i - 1); } }
+  function end(finished) {
+    if (!T) return;
+    cancelAnimationFrame(T.raf);
+    clearInterval(T.timer);
+    const wasAuto = T.auto;
+    T = null;
+    tourEl.hidden = true;
+    slide.hidden = true;
+    document.removeEventListener("keydown", onKey);
+    try { sessionStorage.setItem("swa-toured", "1"); } catch (e) {}
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    if (finished && !wasAuto) { toast("That's the tour! Now pick a chapter and start studying 🚀"); confetti(innerWidth / 2, innerHeight / 3, 120); }
+  }
+  function onKey(e) {
+    if (!T) return;
+    if (e.key === "Escape") { e.preventDefault(); end(); }
+    else if (e.key === "ArrowRight" || e.key === "PageDown" || (e.key === "Enter" && e.target === document.body)) { e.preventDefault(); next(); }
+    else if (e.key === "ArrowLeft" || e.key === "PageUp") { e.preventDefault(); back(); }
+    else if (e.key === " " && T.auto) { e.preventDefault(); togglePause(); }
+  }
+  function togglePause() {
+    if (!T) return;
+    T.paused = !T.paused;
+    toast(T.paused ? "Paused · press Space to continue" : "Playing");
+    if (!T.items[T.i].slide) $("#tourNext").textContent = T.paused ? "Resume" : "Next";
+  }
+  $("#tourNext").onclick = () => (T && T.auto && T.paused ? togglePause() : next());
+  $("#tourBack").onclick = back;
+  $("#tourSkip").onclick = () => end();
+  slide.addEventListener("click", (e) => {
+    if (e.target.closest("[data-slide-next]")) {
+      if (document.documentElement.requestFullscreen && !document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
+      next();
+    } else if (e.target.closest("[data-slide-exit]")) end(true);
+  });
+  addEventListener("resize", () => { if (T && !T.items[T.i].slide) { const el = $(T.items[T.i].sel); if (el) scrollTo(el); } });
+
+  function drawQr() {
+    const url = location.origin + "/";
+    const paint = () => {
+      const box = $("#slideQr");
+      if (!box || !window.qrcode) return;
+      const q = qrcode(0, "M");
+      q.addData(url);
+      q.make();
+      box.innerHTML = q.createSvgTag(6, 2);
+    };
+    if (window.qrcode) return paint();
+    const s = document.createElement("script");
+    s.src = "https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js";
+    s.onload = paint;
+    document.head.append(s);
+  }
+
+  const startTour = () => {
+    if (!state.profile) { toast("Choose your class first, then take the tour"); openSetup(); return; }
+    start(STEPS, false);
+  };
+  window.startTour = startTour;
+  $("#tourBtn").onclick = startTour;
+  $("#tourFooter").onclick = startTour;
+
+  // Wait for the intro animation to finish before starting anything on top of it
+  function afterIntro(fn) {
+    const t0 = Date.now();
+    const wait = () => {
+      const l = $("#loader");
+      if ((!l || getComputedStyle(l).display === "none") || Date.now() - t0 > 9000) setTimeout(fn, 500);
+      else setTimeout(wait, 250);
+    };
+    wait();
+  }
+  if (PRESENT) afterIntro(() => start([{ slide: "title" }, { slide: "problem" }, ...STEPS, { slide: "end" }], true));
+  else if (DEMO) {
+    let seen = false;
+    try { seen = sessionStorage.getItem("swa-toured") === "1"; } catch (e) {}
+    if (!seen) afterIntro(() => { if (!T && state.profile) start(STEPS, false); });
+  }
+})();

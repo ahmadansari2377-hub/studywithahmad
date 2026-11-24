@@ -12,6 +12,12 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="Study Ahmad" />
   <meta name="description" content="Free study planner for Punjab Board Matric and Inter students. Also available as an Android and Windows app." />
+  <meta property="og:title" content="Study with Ahmad — free study planner for Matric &amp; Inter" />
+  <meta property="og:description" content="Every PTB and FBISE chapter, a focus timer, board exam countdown and an AI tutor in English and Urdu. Free." />
+  <meta property="og:image" content="https://studywithahmad.vercel.app/icons/icon-512.png" />
+  <meta property="og:url" content="https://studywithahmad.vercel.app/" />
+  <meta property="og:type" content="website" />
+  <meta name="twitter:card" content="summary" />
   <script>
     // Theme first so the page never flashes the wrong colours
     try {
@@ -133,6 +139,7 @@
           <div class="hero-cta">
             <a href="#syllabus" class="btn btn-primary glow-border magnetic"><span class="roll"><span>Open my syllabus</span></span></a>
             <a href="#focus" class="btn btn-soft magnetic"><span class="roll"><span>Start a focus session</span></span></a>
+            <button type="button" class="tour-link" id="tourBtn"><svg><use href="#i-spark"/></svg>Take the 1-minute tour</button>
           </div>
         </div>
         <div class="stat-grid" id="statGrid">
@@ -140,6 +147,34 @@
           <div class="stat-card c2"><div class="stat-ring"><svg viewBox="0 0 44 44"><circle class="sr-bg" cx="22" cy="22" r="19"/><circle class="sr-fg" id="ringTasks" cx="22" cy="22" r="19"/></svg><svg class="sr-ico"><use href="#i-check"/></svg></div><b id="statTasks">0</b><span>tasks done today</span><small class="stat-goal" id="goalTasks"></small></div>
           <div class="stat-card c3"><div class="stat-ring"><svg viewBox="0 0 44 44"><circle class="sr-bg" cx="22" cy="22" r="19"/><circle class="sr-fg" id="ringStreak" cx="22" cy="22" r="19"/></svg><svg class="sr-ico"><use href="#i-flame"/></svg></div><span class="streak-badge" id="streakBadge"></span><b id="statStreak">0</b><span>day study streak</span><small class="stat-goal" id="goalStreak"></small></div>
           <div class="stat-card c4"><div class="stat-ring"><svg viewBox="0 0 44 44"><circle class="sr-bg" cx="22" cy="22" r="19"/><circle class="sr-fg" id="ringExam" cx="22" cy="22" r="19"/></svg><svg class="sr-ico"><use href="#i-target"/></svg></div><b id="statExam">–</b><span id="statExamLabel">days to next exam</span><small class="stat-goal" id="goalExam"></small></div>
+        </div>
+      </div>
+      <div class="container hero-extra">
+        <div class="live-stats" id="liveStats" hidden aria-label="Live numbers from all students">
+          <span class="live-tag"><i class="live-dot"></i>Live</span>
+          <span><b data-k="students">0</b> students</span>
+          <span><b data-k="hours">0</b> hours focused</span>
+          <span><b data-k="chapters">0</b> chapters read</span>
+          <span><b data-k="studying_now">0</b> studying right now</span>
+        </div>
+        <div class="board-count" id="boardCount" hidden>
+          <div class="bc-head">
+            <div><p class="kicker">Board exam countdown</p><h3 id="bcTitle">Annual exam</h3></div>
+            <label class="bc-date"><span id="bcEst">Estimated date, set yours</span><input type="date" id="bcDate" class="input" aria-label="Board exam date" /></label>
+          </div>
+          <div class="bc-clock" id="bcClock">
+            <div><b data-u="d">0</b><small>Days</small></div>
+            <div><b data-u="h">00</b><small>Hours</small></div>
+            <div><b data-u="m">00</b><small>Mins</small></div>
+            <div><b data-u="s">00</b><small>Secs</small></div>
+          </div>
+          <div class="bc-facts">
+            <div><b id="bcLeft">0</b><span>chapters left to read</span></div>
+            <div><b id="bcPace">0</b><span>chapters a day to finish a month early</span></div>
+            <div><b id="bcPct">0%</b><span>of the syllabus read</span></div>
+          </div>
+          <div class="bc-bar" aria-hidden="true"><i id="bcBar"></i></div>
+          <p class="bc-tip" id="bcTip"></p>
         </div>
       </div>
       <div class="ticker"><div class="ticker-track" id="ticker"></div></div>
@@ -227,6 +262,7 @@
               <button data-sound="white">🌬️ White noise</button>
               <input type="range" id="soundVol" min="0.05" max="0.6" step="0.05" value="0.3" aria-label="Sound volume" />
             </div>
+            <button type="button" class="btn btn-soft zen-open" id="zenOpen"><svg><use href="#i-target"/></svg>Full-screen focus mode</button>
           </div>
           <div class="focus-side">
             <div class="panel reveal">
@@ -523,6 +559,7 @@
             <div class="seg" id="buddyLang" role="group" aria-label="Answer language">
               <button data-lang="en" class="active">English</button><button data-lang="roman">Roman Urdu</button><button data-lang="ur" lang="ur">اردو</button>
             </div>
+            <button type="button" class="voice-chat" id="voiceChat" aria-pressed="false" title="Speak a question, hear the answer"><svg><use href="#i-mic"/></svg>Voice chat</button>
             <span class="muted small buddy-left" id="buddyLeft"></span>
           </div>
           <div class="buddy-chat" id="buddyChat" aria-live="polite">
@@ -688,6 +725,8 @@
         <label class="link-btn" for="importFile">Import backup</label><input type="file" accept="application/json,.json" id="importFile" hidden />
         <button class="link-btn" id="sampleBtn">Load sample data</button>
         <button class="link-btn" id="demoFooter">Try the demo</button>
+        <button class="link-btn" id="tourFooter">Take the tour</button>
+        <a class="link-btn" href="/?present">🎤 Presentation mode</a>
         <button class="link-btn" id="saverBtn">⚡ Load-shedding mode</button>
         <button class="link-btn danger" id="clearBtn">Clear everything</button>
         <button class="link-btn" id="feedbackBtn">Koi masla? Batayein</button>
@@ -864,6 +903,39 @@
 
   <div class="toast" id="toast"></div>
 
+  <!-- Full-screen focus mode -->
+  <div class="zen" id="zen" hidden role="dialog" aria-label="Full-screen focus">
+    <button class="icon-btn zen-close" id="zenClose" type="button" aria-label="Leave full-screen focus"><svg class="x"><use href="#i-plus"/></svg></button>
+    <p class="zen-subj" id="zenSubj"></p>
+    <div class="zen-time" id="zenTime">25:00</div>
+    <div class="zen-bar" aria-hidden="true"><i id="zenBar"></i></div>
+    <p class="zen-label" id="zenLabel"></p>
+    <button class="play-btn zen-play" id="zenPlay" type="button" aria-label="Start or pause"><svg class="play"><use href="#i-play"/></svg><svg class="pause"><use href="#i-pause"/></svg></button>
+    <p class="zen-distract" id="zenDistract"></p>
+    <p class="zen-quote" id="zenQuote"></p>
+  </div>
+
+  <!-- Guided tour / presentation -->
+  <div class="tour" id="tour" hidden>
+    <div class="tour-hole" id="tourHole"></div>
+    <div class="tour-tip" id="tourTip" role="dialog" aria-live="polite">
+      <div class="tour-prog"><i id="tourProg"></i></div>
+      <p class="tour-step" id="tourStep"></p>
+      <h3 id="tourTitle"></h3>
+      <p id="tourText"></p>
+      <div class="tour-actions">
+        <button class="link-btn" id="tourSkip" type="button">Skip tour</button>
+        <span class="tour-gap"></span>
+        <button class="btn btn-soft" id="tourBack" type="button">Back</button>
+        <button class="btn btn-primary" id="tourNext" type="button">Next</button>
+      </div>
+    </div>
+  </div>
+  <div class="slide" id="slide" hidden>
+    <div class="slide-inner" id="slideInner"></div>
+    <p class="slide-keys">→ next · ← back · Space pause · Esc exit</p>
+  </div>
+
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/lenis@1.1.13/dist/lenis.min.js"></script>
@@ -872,5 +944,6 @@
   <script src="entrytests.js"></script>
   <script src="solver.js"></script>
   <script src="study.js"></script>
+  <script src="extras.js"></script>
 </body>
 </html>

@@ -123,6 +123,19 @@ def test_city_board(client, make_user):
     assert mine["students"] == 1 and mine["minutes"] in (0, 25)  # 0 if the server's Pakistan "today" is another day
 
 
+def test_live_stats_skip_sample_sessions(client, make_user):
+    srv._stats_cache.update(at=0.0, data=None)
+    before = client.get("/api/stats").json()
+    _, _, token = make_user()
+    data = {"sessions": [{"date": "2026-01-01", "min": 60}, {"date": "2026-01-01", "min": 60, "sample": True}]}
+    client.put("/api/state", headers=auth(token), json={"data": data})
+    srv._stats_cache.update(at=0.0, data=None)
+    after = client.get("/api/stats").json()
+    assert set(after) == {"students", "hours", "chapters", "studying_now"}
+    assert after["students"] == before["students"] + 1
+    assert after["hours"] - before["hours"] in (1, 2)  # the real hour counts (round() can make it 2 at a .5 edge); the sample doesn't add a third
+
+
 # ---------- Push reminders ----------
 def decrypt_push(body: bytes, receiver, auth_secret: bytes) -> bytes:
     """What the browser does (RFC 8291), to prove push_encrypt is right."""
