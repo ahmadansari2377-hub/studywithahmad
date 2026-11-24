@@ -28,7 +28,7 @@
     bookSubjects().forEach((s) => { const p = bookProgress(s); read += p.read; total += p.total; });
     return { read, total, left: total - read };
   }
-  let lastBc = "";
+  let lastBc = "", counting = false; // while the entrance count-up runs, the clock leaves those numbers alone
   function tickBoard() {
     const box = $("#boardCount");
     if (!state.profile) { box.hidden = true; return; }
@@ -37,6 +37,7 @@
     const v = { d: Math.floor(diff / 864e5), h: two(Math.floor(diff / 36e5) % 24), m: two(Math.floor(diff / 6e4) % 60), s: two(Math.floor(diff / 1e3) % 60) };
     Object.entries(v).forEach(([u, val]) => {
       const b = $(`#bcClock b[data-u="${u}"]`);
+      if (counting && u === "d") return;
       if (b.textContent !== String(val)) {
         b.textContent = val;
         if (A && u !== "d") gsap.fromTo(b, { yPercent: -40, opacity: 0.3 }, { yPercent: 0, opacity: 1, duration: 0.4, ease: "expo.out" });
@@ -44,7 +45,7 @@
     });
     const { read, total, left } = syllabusLeft();
     const key = `${read}/${total}/${v.d}/${state.settings.boardDate || ""}/${state.profile.cls}/${state.profile.board}`;
-    if (key === lastBc) return; // the slow-changing parts only need redrawing when something changed
+    if (key === lastBc || counting) return; // the slow-changing parts only need redrawing when something changed
     lastBc = key;
     const lvl = state.profile.cls <= 10 ? "Matric" : "Inter";
     $("#bcTitle").textContent = `Class ${state.profile.cls} ${state.profile.board === "fbise" ? "FBISE" : "Punjab Board"} annual exam · ${when.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}`;
@@ -74,6 +75,30 @@
   });
   tickBoard();
   setInterval(tickBoard, 1000);
+  // Entrance: the card rises, the four boxes flip up one after another, and the numbers count up from 0
+  if (A && "IntersectionObserver" in window) {
+    const box = $("#boardCount");
+    box.classList.add("bc-wait");
+    $("#bcBar").style.transform = "scaleX(0)";
+    const io = new IntersectionObserver((entries) => {
+      if (!entries.some((e) => e.isIntersecting)) return;
+      io.disconnect();
+      const days = Math.floor(Math.max(0, boardDate() - Date.now()) / 864e5), { read, total, left } = syllabusLeft();
+      counting = true;
+      box.classList.remove("bc-wait");
+      const o = { d: 0, l: 0, p: 0 }, pct = total ? Math.round((read / total) * 100) : 0;
+      gsap.to(o, {
+        d: days, l: left, p: pct, duration: 1.8, delay: 0.25, ease: "power3.out",
+        onUpdate: () => {
+          $('#bcClock b[data-u="d"]').textContent = Math.round(o.d);
+          $("#bcLeft").textContent = Math.round(o.l);
+          $("#bcPct").textContent = Math.round(o.p) + "%";
+        },
+        onComplete: () => { counting = false; lastBc = ""; tickBoard(); },
+      });
+    }, { threshold: 0.25 });
+    afterIntro(() => io.observe(box)); // not while the intro curtain still covers it
+  }
 
   // =====================================================================
   //  Live numbers from every student (hero)

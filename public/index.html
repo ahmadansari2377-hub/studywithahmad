@@ -27,6 +27,8 @@
       // Load-shedding mode: black screen, no animations (saves battery on a UPS or a low phone)
       if (localStorage.getItem("swa-saver") === "1") { r.dataset.theme = "dark"; r.dataset.amoled = "1"; r.classList.add("saver"); }
     } catch (e) {}
+    // Budget phones (touch + ≤4 GB RAM or ≤4 cores): drop the blur and glow effects that make scrolling stutter
+    if (matchMedia("(pointer: coarse)").matches && ((navigator.deviceMemory && navigator.deviceMemory <= 4) || (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4))) document.documentElement.classList.add("lite");
     if (!document.documentElement.classList.contains("saver") && !matchMedia("(prefers-reduced-motion: reduce)").matches) document.documentElement.classList.add("anim");
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />

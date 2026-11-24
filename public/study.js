@@ -940,6 +940,7 @@ $("#chapters").addEventListener("click", (e) => {
   $(".toggle.rev", li).classList.toggle("on", !!pr.v);
   li.classList.toggle("revised", !!pr.v);
   if (A) gsap.fromTo(btn, { scale: 0.85 }, { scale: 1, duration: 0.6, ease: "elastic.out(1,0.4)" });
+  if (A && pr[btn.dataset.act]) { li.classList.remove("flash"); void li.offsetWidth; li.classList.add("flash"); } // glow ring + the tick draws itself
   updateSubjectProgress(sylSubject);
   renderReviewDue();
   const p = bookProgress(sylSubject);
@@ -1022,6 +1023,7 @@ function finish() {
     renderSessionLog(true); renderStats(); renderProgress();
     toast(`Session done — ${state.settings.focus} min of ${subj($("#focusSubject").value).name}. Take a break!`);
     confetti(...centerOf($("#playBtn")), 110);
+    if (A) { timerCard.classList.remove("celebrate"); void timerCard.offsetWidth; timerCard.classList.add("celebrate"); setTimeout(() => timerCard.classList.remove("celebrate"), 2600); }
     setMode(todaysSessions().length % 4 === 0 ? "long" : "short");
   } else {
     toast("Break over — ready for the next session?");
@@ -1764,7 +1766,10 @@ if (!A) {
   if (lenis) lenis.stop();
   $$(".loader-logo > *").forEach((w) => { w.innerHTML = [...w.textContent].map((c) => `<span class="ch">${c}</span>`).join(""); });
   const bar = { v: 0 };
-  gsap.timeline({ defaults: { ease: "expo.out" } })
+  const intro = gsap.timeline({ defaults: { ease: "expo.out" } });
+  // The full intro plays once per visit; a reload in the same visit (e.g. during a presentation) runs it 3x faster
+  try { if (sessionStorage.getItem("swa-intro")) intro.timeScale(3); sessionStorage.setItem("swa-intro", "1"); } catch (e) {}
+  intro
     .fromTo("#loaderPhoto", { clipPath: "inset(100% 0% 0% 0% round 24px)" }, { clipPath: "inset(0% 0% 0% 0% round 24px)", duration: 1.1, ease: "expo.inOut" })
     .fromTo("#loaderPhoto img", { scale: 2, transformOrigin: "50% 30%" }, { scale: 1.35, duration: 1.6, ease: "power3.out" }, 0)
     .from("#loaderPhoto", { y: 60, rotate: -6, duration: 1.4 }, 0)
