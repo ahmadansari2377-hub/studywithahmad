@@ -264,10 +264,183 @@
   };
 
   // =====================================================================
+  //  "Aaj kya parhun?" — three things to do today, worked out on the device (no AI, no internet needed)
+  // =====================================================================
+  function go(href) { // same path as clicking a nav link, so phone tabs switch too
+    const a = document.createElement("a");
+    a.href = href;
+    document.body.append(a);
+    a.click();
+    a.remove();
+  }
+  function openChapterList(s) {
+    sylSubject = s;
+    renderSyllabus(true);
+    go("#syllabus");
+  }
+  function focusOn(s) {
+    const sel = $("#focusSubject");
+    if ([...sel.options].some((o) => o.value === s)) { sel.value = s; sel.dispatchEvent(new Event("change")); }
+    go("#focus");
+    if (mode !== "focus") setMode("focus");
+    if (!running) setTimeout(() => { startTimer(); toast(`25 minutes of ${SUBJECT_INFO[s].name}. Phone door, kitab khol lein! 📖`); }, 1200);
+  }
+  const chName = (s, n) => { const b = bookOf(s); return b.chapters[n - b.start]; };
+  function todayPlan() {
+    const items = [], today = dayKey();
+    // 1. The revision that is most overdue (spaced repetition)
+    const due = reviewsDue();
+    if (due.length) {
+      const r = due[0], name = SUBJECT_INFO[r.s].name;
+      items.push({ icon: "🔁", c: SUBJECT_INFO[r.s].color, t: `Revise ${name} Ch ${r.n}: ${r.name}`,
+        why: `You read it ${r.ago} day${r.ago === 1 ? "" : "s"} ago. A quick revision now locks it in${due.length > 1 ? ` (${due.length - 1} more revision${due.length > 2 ? "s" : ""} due)` : ""}.`,
+        act: "Open chapters", run: () => openChapterList(r.s) });
+    }
+    // 2. The next chapter of the book you are furthest behind in, at the board-exam pace
+    let best = null;
+    bookSubjects().forEach((s) => {
+      const b = bookOf(s);
+      if (!b?.chapters.length) return;
+      const p = bookProgress(s);
+      if (p.read >= p.total) return;
+      const f = p.read / p.total;
+      if (!best || f < best.f) best = { s, f };
+    });
+    if (best) {
+      const b = bookOf(best.s), i = b.chapters.findIndex((_, k) => !(state.syl[sylKey(best.s, b.start + k)] || {}).r), n = b.start + i;
+      const { left } = syllabusLeft(), days = Math.max(1, Math.floor((boardDate() - Date.now()) / 864e5) - 30);
+      const pace = Math.max(1, Math.ceil(left / days));
+      items.push({ icon: "📖", c: SUBJECT_INFO[best.s].color, t: `Read ${SUBJECT_INFO[best.s].name} Ch ${n}: ${chName(best.s, n)}`,
+        why: `${SUBJECT_INFO[best.s].name} is your least-covered book (${Math.round(best.f * 100)}% read). To finish a month before the board exam you need about ${pace} chapter${pace > 1 ? "s" : ""} a day.`,
+        act: "Start 25-min focus", run: () => focusOn(best.s) });
+    }
+    // 3. The most urgent task; otherwise the mistake notebook or flashcards
+    const t = state.tasks.filter((x) => !x.done && x.due && x.due <= today).sort((a, b) => a.due.localeCompare(b.due) || b.priority - a.priority)[0];
+    if (t) items.push({ icon: "✅", c: subj(t.subject).color, t: t.text, why: t.due < today ? "Overdue: get it off your list first." : "Due today.", act: "Open tasks", run: () => go("#tasks") });
+    else if ((state.mistakes || []).length) items.push({ icon: "📒", c: "#ff6b57", t: `Go over the ${state.mistakes.length} question${state.mistakes.length > 1 ? "s" : ""} in your mistake notebook`, why: "The easiest marks to win are the ones you lost before.", act: "Open notebook", run: () => go("#mistakes") });
+    else items.push({ icon: "🃏", c: "#f2b02f", t: "10 flashcards", why: "Five minutes of quick recall keeps definitions and formulas fresh.", act: "Open flashcards", run: () => go("#flashcards") });
+    return items;
+  }
+  let planItems = [];
+  function openToday() {
+    if (!state.profile) { toast("Choose your class first"); openSetup(); return; }
+    planItems = todayPlan();
+    const mins = todaysSessions().reduce((a, x) => a + x.min, 0), goal = state.settings.goal || 120, st = streak();
+    $("#tdSum").innerHTML = `${mins >= goal ? "🎯 Daily goal done!" : `⏱ <b>${mins}</b> of ${goal} min studied today`}${st ? ` · 🔥 <b>${st}</b> day streak` : ""}`;
+    $("#tdList").innerHTML = planItems.map((x, i) => `<li style="--c:${x.c}">
+      <span class="td-ico">${x.icon}</span>
+      <div><b>${esc(x.t)}</b><p>${esc(x.why)}</p></div>
+      <button class="btn ${i === 0 ? "btn-primary" : "btn-soft"}" data-td="${i}" type="button">${esc(x.act)}</button></li>`).join("");
+    openDlg("#todayDlg");
+    if (A) gsap.fromTo("#tdList li", { x: 40, opacity: 0 }, { x: 0, opacity: 1, stagger: 0.1, duration: 0.8, delay: 0.15, ease: "expo.out" });
+  }
+  $("#todayBtn").onclick = openToday;
+  $("#tdList").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-td]");
+    if (!b) return;
+    closeDlg($("#todayDlg"));
+    planItems[+b.dataset.td].run();
+  });
+  $$("#todayDlg, #shareDlg").forEach((d) => d.addEventListener("click", (e) => { if (e.target.closest("[data-close]")) closeDlg(d); }));
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") $$("#todayDlg.open, #shareDlg.open").forEach(closeDlg); });
+
+  // =====================================================================
+  //  Share my progress: a 1080×1920 picture for WhatsApp status / Instagram story
+  // =====================================================================
+  function rr(c, x, y, w, h, r) { c.beginPath(); c.roundRect ? c.roundRect(x, y, w, h, r) : c.rect(x, y, w, h); }
+  async function drawCard() {
+    try { await Promise.all(["800 120px 'Bricolage Grotesque'", "700 60px 'Bricolage Grotesque'", "500 40px Inter", "600 40px Inter"].map((f) => document.fonts.load(f))); } catch (e) {}
+    const W = 1080, H = 1920, cv = Object.assign(document.createElement("canvas"), { width: W, height: H }), c = cv.getContext("2d");
+    const D = "'Bricolage Grotesque', system-ui, sans-serif", S = "Inter, system-ui, sans-serif";
+    // Background: night with violet and coral glows
+    c.fillStyle = "#0e0c1d"; c.fillRect(0, 0, W, H);
+    [[180, 200, 900, "rgba(109,93,252,0.65)"], [1000, 1500, 900, "rgba(255,107,87,0.40)"], [900, 450, 500, "rgba(163,91,255,0.35)"]].forEach(([x, y, r, col]) => {
+      const g = c.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, col); g.addColorStop(1, "rgba(14,12,29,0)");
+      c.fillStyle = g; c.fillRect(0, 0, W, H);
+    });
+    // Logo
+    const lg = c.createLinearGradient(80, 90, 180, 190); lg.addColorStop(0, "#5b4bf5"); lg.addColorStop(0.55, "#a35bff"); lg.addColorStop(1, "#ff6b57");
+    rr(c, 80, 90, 100, 100, 30); c.fillStyle = lg; c.fill();
+    c.fillStyle = "#fff"; c.font = `800 56px ${D}`; c.textBaseline = "middle"; c.fillText("📖", 101, 142);
+    c.textBaseline = "alphabetic";
+    c.fillStyle = "rgba(255,255,255,0.6)"; c.font = `600 30px ${S}`; c.fillText("STUDY WITH", 205, 128);
+    c.fillStyle = "#fff"; c.font = `800 52px ${D}`; c.fillText("Ahmad", 205, 182);
+    // Who
+    const who = (typeof username === "string" && username) || "My";
+    c.fillStyle = "#ffd166"; c.font = `600 34px ${S}`; c.fillText("THIS WEEK'S PROGRESS", 80, 330);
+    c.fillStyle = "#fff"; c.font = `800 92px ${D}`;
+    const title = who === "My" ? "My study week" : `${who}'s week`;
+    c.fillText(title.length > 18 ? title.slice(0, 17) + "…" : title, 80, 430);
+    c.fillStyle = "rgba(255,255,255,0.7)"; c.font = `500 36px ${S}`;
+    c.fillText(`Class ${state.profile.cls} · ${state.profile.board === "fbise" ? "FBISE" : "Punjab Board"} · ${groupOf()?.name || ""}`, 80, 490);
+    // Big number: hours this week
+    const mins = weekMinutes(), hrs = mins / 60;
+    rr(c, 60, 560, 960, 380, 48); c.fillStyle = "rgba(255,255,255,0.07)"; c.fill(); c.strokeStyle = "rgba(255,255,255,0.15)"; c.lineWidth = 2; c.stroke();
+    const hg = c.createLinearGradient(100, 620, 700, 860); hg.addColorStop(0, "#ffffff"); hg.addColorStop(1, "#ffd166");
+    c.fillStyle = hg; c.font = `800 230px ${D}`;
+    const hTxt = hrs >= 10 ? String(Math.round(hrs)) : hrs.toFixed(1).replace(/\.0$/, "");
+    c.fillText(hTxt, 100, 820);
+    const hw = c.measureText(hTxt).width;
+    c.fillStyle = "#fff"; c.font = `800 90px ${D}`; c.fillText("hrs", 120 + hw, 820);
+    c.fillStyle = "rgba(255,255,255,0.75)"; c.font = `500 38px ${S}`; c.fillText(`focused this week · ${Math.min(100, Math.round((mins / 600) * 100))}% of the 10-hour challenge`, 100, 895);
+    // Four tiles
+    const { read, total } = syllabusLeft(), pct = total ? Math.round((read / total) * 100) : 0;
+    const days = Math.floor(Math.max(0, boardDate() - Date.now()) / 864e5);
+    const tiles = [["🔥", streak(), "day streak"], ["📚", pct + "%", "syllabus read"], ["✅", read, "chapters done"], ["⏳", days, "days to boards"]];
+    tiles.forEach(([ico, val, lab], i) => {
+      const x = 60 + (i % 2) * 490, y = 980 + Math.floor(i / 2) * 250;
+      rr(c, x, y, 470, 220, 40); c.fillStyle = "rgba(255,255,255,0.07)"; c.fill(); c.strokeStyle = "rgba(255,255,255,0.12)"; c.stroke();
+      c.font = `500 56px ${S}`; c.fillStyle = "#fff"; c.fillText(ico, x + 36, y + 86);
+      c.font = `800 92px ${D}`; c.fillText(String(val), x + 120, y + 100);
+      c.fillStyle = "rgba(255,255,255,0.7)"; c.font = `500 34px ${S}`; c.fillText(lab, x + 38, y + 175);
+    });
+    // Subject bars (up to 5 books, least done last so the strong ones show first)
+    const subs = bookSubjects().filter((s) => bookOf(s)?.chapters.length).map((s) => { const p = bookProgress(s); return { n: SUBJECT_INFO[s].name, c: SUBJECT_INFO[s].color, f: p.read / p.total }; })
+      .sort((a, b) => b.f - a.f).slice(0, 5);
+    c.fillStyle = "#ffd166"; c.font = `600 30px ${S}`; c.fillText("BOOKS", 80, 1525);
+    subs.forEach((s, i) => {
+      const y = 1570 + i * 54;
+      c.fillStyle = "#fff"; c.font = `500 30px ${S}`; c.fillText(s.n.length > 16 ? s.n.slice(0, 15) + "…" : s.n, 80, y + 22);
+      rr(c, 380, y, 560, 22, 11); c.fillStyle = "rgba(255,255,255,0.12)"; c.fill();
+      if (s.f > 0) { rr(c, 380, y, Math.max(22, 560 * s.f), 22, 11); c.fillStyle = s.c; c.fill(); }
+      c.fillStyle = "rgba(255,255,255,0.75)"; c.font = `600 28px ${S}`; c.fillText(Math.round(s.f * 100) + "%", 960, y + 22);
+    });
+    // Footer
+    c.fillStyle = "rgba(255,255,255,0.55)"; c.font = `500 32px ${S}`; c.textAlign = "center";
+    c.fillText(`Plan your studies free · ${location.host || "studywithahmad.vercel.app"}`, W / 2, 1870);
+    return cv;
+  }
+  let shareBlob = null, shareUrl = "";
+  async function openShare() {
+    if (!state.profile) { toast("Choose your class first"); openSetup(); return; }
+    const btn = $("#shareBtn");
+    btn.disabled = true;
+    try {
+      const cv = await drawCard();
+      shareBlob = await new Promise((res) => cv.toBlob(res, "image/png"));
+      if (shareUrl) URL.revokeObjectURL(shareUrl);
+      shareUrl = URL.createObjectURL(shareBlob);
+      $("#shareImg").src = shareUrl;
+      $("#shareSave").href = shareUrl;
+      $("#shareSend").hidden = !(navigator.canShare && navigator.canShare({ files: [new File([shareBlob], "progress.png", { type: "image/png" })] }));
+      openDlg("#shareDlg");
+      if (A) gsap.fromTo("#shareImg", { y: 40, rotate: -3, opacity: 0 }, { y: 0, rotate: 0, opacity: 1, duration: 1, delay: 0.1, ease: "expo.out" });
+    } catch (e) { toast("Couldn't make the picture on this device"); }
+    finally { btn.disabled = false; }
+  }
+  $("#shareBtn").onclick = openShare;
+  $("#shareSend").onclick = async () => {
+    try {
+      await navigator.share({ files: [new File([shareBlob], "study-with-ahmad-progress.png", { type: "image/png" })], text: `My study week on Study with Ahmad 📚 ${location.origin}/` });
+    } catch (e) { if (e.name !== "AbortError") toast("Sharing didn't work. Use Download instead"); }
+  };
+
+  // =====================================================================
   //  Guided tour + presentation mode
   // =====================================================================
   const STEPS = [
     { sec: "hero", sel: "#statGrid", t: "Your day at a glance", d: "Minutes focused, tasks done, your study streak and the next exam. It all updates live as you study." },
+    { sec: "hero", sel: "#todayBtn", t: "Aaj kya parhun? One tap, today's plan", d: "The app picks three things for today: the revision that's due, the next chapter of your weakest book at board-exam pace, and your most urgent task. One more tap starts the timer." },
     { sec: "hero", sel: "#boardCount", t: "Board exam countdown", d: "Counts down to the annual board exam and works out how many chapters a day you need to finish a month early, so the last month is pure revision." },
     { sec: "syllabus", sel: "#sylSubjects", t: "Every chapter of your books", d: "Official 2026–27 PTB and FBISE chapter lists for every subject. Tick Read and Revised, and spaced-repetition reminders bring old chapters back before you forget them." },
     { sec: "focus", sel: "#timerCard", t: "Focus timer with study sounds", d: "25-minute Pomodoro sessions, rain and noise sounds, a mock-exam timer, and a full-screen focus mode that notices when you leave to check your phone." },
@@ -276,6 +449,7 @@
     { sec: "exams", sel: "#planPanel", t: "AI study plan", d: "Add your date sheet and the AI makes a day-by-day plan from the chapters you haven't read yet, at the hours you can actually give." },
     { sec: "exams", sel: "#paperPanel", t: "Practice papers in board pattern", d: "A fresh paper from your chapters with MCQs, short and long questions. MCQs are marked as you answer them." },
     { sec: "flashcards", sel: "#flashcard", t: "Flashcards and mistake notebook", d: "Starter cards for every subject. Snap a photo of a book page and the AI turns it into cards. Every wrong answer lands in your mistake notebook." },
+    { sec: "progress-sec", sel: ".report-btns", t: "Share your progress", d: "One tap makes a progress card for WhatsApp status or an Instagram story: hours this week, streak and syllabus done. Friends see it and join in." },
     { sec: "progress-sec", sel: "#predict", t: "Progress, badges and marks predictor", d: "Charts of your week, a study heatmap, 16 badges, a city vs city challenge and a predicted board score from your test results." },
     { sec: "buddy", sel: ".panel.buddy", t: "AI Study Buddy in Urdu & English", d: "Ask by typing, by voice or with a photo of the question. Answers come in English, Roman Urdu or Urdu, and can be read aloud." },
     { sec: "get-app", sel: "#get-app .container", t: "An app for phones and PCs", d: "Install it on Android or Windows. It works offline during load-shedding and syncs between devices when the internet is back." },

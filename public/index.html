@@ -141,6 +141,7 @@
           <div class="hero-cta">
             <a href="#syllabus" class="btn btn-primary glow-border magnetic"><span class="roll"><span>Open my syllabus</span></span></a>
             <a href="#focus" class="btn btn-soft magnetic"><span class="roll"><span>Start a focus session</span></span></a>
+            <button type="button" class="btn today-btn" id="todayBtn"><span>🎯</span>Aaj kya parhun?</button>
             <button type="button" class="tour-link" id="tourBtn"><svg><use href="#i-spark"/></svg>Take the 1-minute tour</button>
           </div>
         </div>
@@ -485,7 +486,10 @@
       <div class="container">
         <div class="section-head">
           <div><p class="kicker">07 · Progress</p><h2 class="split">Watch the <em>hours add up.</em></h2></div>
-          <button class="btn btn-soft report-btn reveal" id="reportBtn" type="button">📊 Weekly report</button>
+          <div class="report-btns reveal">
+            <button class="btn btn-soft report-btn" id="reportBtn" type="button">📊 Weekly report</button>
+            <button class="btn btn-primary report-btn" id="shareBtn" type="button">📸 Share my progress</button>
+          </div>
           <div class="totals reveal">
             <div><b id="totHours">0</b><span>hours this week</span></div>
             <div><b id="totSessions">0</b><span>sessions this week</span></div>
@@ -904,6 +908,34 @@
   </div>
 
   <div class="toast" id="toast"></div>
+
+  <!-- Aaj kya parhun? Today's plan in one tap -->
+  <div class="setup" id="todayDlg" aria-hidden="true">
+    <div class="setup-bg" data-close></div>
+    <div class="setup-card today-card" role="dialog" aria-labelledby="tdTitle">
+      <button class="icon-btn auth-close" data-close aria-label="Close"><svg><use href="#i-plus"/></svg></button>
+      <p class="kicker" id="tdKicker">Today's plan</p>
+      <h2 id="tdTitle">Aaj kya parhun?</h2>
+      <p class="td-sum" id="tdSum"></p>
+      <ol class="td-list" id="tdList"></ol>
+      <p class="muted small td-note">Picked from your revision schedule, the board exam countdown and your tasks. It changes as you study.</p>
+    </div>
+  </div>
+
+  <!-- Share my progress: a picture for WhatsApp status / Instagram story -->
+  <div class="setup" id="shareDlg" aria-hidden="true">
+    <div class="setup-bg" data-close></div>
+    <div class="setup-card share-card" role="dialog" aria-labelledby="shTitle">
+      <button class="icon-btn auth-close" data-close aria-label="Close"><svg><use href="#i-plus"/></svg></button>
+      <p class="kicker">Share</p>
+      <h2 id="shTitle">Your progress card</h2>
+      <div class="share-frame"><img id="shareImg" alt="Your progress card" /></div>
+      <div class="auth-actions">
+        <button class="btn btn-primary" id="shareSend" type="button">📤 Share</button>
+        <a class="btn btn-soft" id="shareSave" download="study-with-ahmad-progress.png">⬇ Download</a>
+      </div>
+    </div>
+  </div>
 
   <!-- Full-screen focus mode -->
   <div class="zen" id="zen" hidden role="dialog" aria-label="Full-screen focus">

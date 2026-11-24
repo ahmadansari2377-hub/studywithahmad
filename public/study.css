@@ -1832,3 +1832,33 @@ html.lite .header, html.lite .dock, html.lite .tabbar, html.lite .setup-bg, html
 html.lite .header { background: var(--bg); }
 html.lite.tabbed .tabbar, html.lite .dock { background: var(--surface); }
 html.lite .exam::after { filter: none; }
+
+/* ---------- Aaj kya parhun? ---------- */
+.today-btn { position: relative; color: var(--ink); background: var(--surface); border: 1.5px solid transparent;
+  background: linear-gradient(var(--surface), var(--surface)) padding-box, var(--brand, linear-gradient(110deg, #5b4bf5, #ff6b57)) border-box; box-shadow: 0 10px 24px -14px var(--primary); gap: 8px; }
+.today-btn span { font-size: 17px; }
+.today-btn:hover { transform: translateY(-2px); }
+.today-card { max-width: 620px; width: 100%; }
+.today-card h2 { margin-bottom: 8px; }
+.td-sum { color: var(--muted); margin-bottom: 18px; }
+.td-sum b { color: var(--ink); }
+.td-list { list-style: none; display: grid; gap: 12px; margin-bottom: 14px; }
+.td-list li { display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: center; padding: 14px 16px; border-radius: 16px; border: 1px solid var(--line); background: var(--surface); position: relative; overflow: hidden; }
+.td-list li::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--c); }
+.td-ico { font-size: 26px; width: 44px; height: 44px; display: grid; place-items: center; border-radius: 12px; background: color-mix(in srgb, var(--c) 16%, transparent); }
+.td-list b { display: block; font-size: 15px; line-height: 1.35; }
+.td-list p { font-size: 13px; color: var(--muted); margin-top: 3px; }
+.td-list .btn { height: 40px; padding: 0 14px; font-size: 13.5px; white-space: nowrap; }
+.td-note { margin-top: 4px; }
+@media (max-width: 600px) {
+  .td-list li { grid-template-columns: auto 1fr; }
+  .td-list .btn { grid-column: 1 / -1; width: 100%; justify-content: center; }
+}
+
+/* ---------- Share my progress ---------- */
+.report-btns { display: flex; gap: 10px; flex-wrap: wrap; align-self: center; }
+.share-card { max-width: 460px; width: 100%; text-align: center; }
+.share-card h2 { margin-bottom: 16px; }
+.share-frame { border-radius: 18px; overflow: hidden; box-shadow: 0 30px 60px -25px rgba(0, 0, 0, 0.6); margin: 0 auto 18px; width: min(300px, 62vw); aspect-ratio: 9 / 16; background: #0e0c1d; }
+.share-frame img { width: 100%; height: 100%; display: block; object-fit: cover; }
+.share-card .auth-actions { justify-content: center; }
